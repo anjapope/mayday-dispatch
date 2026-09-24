@@ -6,6 +6,7 @@ export const GatewayErrorCodeSchema = z.enum([
   "FORBIDDEN",
   "NOT_FOUND",
   "CONFLICT",
+  "ORIGIN_CONFLICT",
   "STALE_VERSION",
   "IDEMPOTENCY_CONFLICT",
   "PERSISTENCE_FAILURE",
@@ -13,7 +14,7 @@ export const GatewayErrorCodeSchema = z.enum([
   "AUDIT_FAILURE",
   "INVALID_TRANSITION",
   "EVIDENCE_POLICY_VIOLATION",
-  "EDITORIAL_SYNC_LOCKED",
+  "EDITORIAL_LOCK",
   "INTERNAL_ERROR",
 ]);
 
@@ -25,6 +26,7 @@ const errorStatuses: Record<GatewayErrorCode, number> = {
   FORBIDDEN: 403,
   NOT_FOUND: 404,
   CONFLICT: 409,
+  ORIGIN_CONFLICT: 409,
   STALE_VERSION: 409,
   IDEMPOTENCY_CONFLICT: 409,
   PERSISTENCE_FAILURE: 503,
@@ -32,7 +34,7 @@ const errorStatuses: Record<GatewayErrorCode, number> = {
   AUDIT_FAILURE: 503,
   INVALID_TRANSITION: 409,
   EVIDENCE_POLICY_VIOLATION: 422,
-  EDITORIAL_SYNC_LOCKED: 409,
+  EDITORIAL_LOCK: 409,
   INTERNAL_ERROR: 500,
 };
 

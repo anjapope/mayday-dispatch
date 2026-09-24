@@ -21,8 +21,9 @@ export async function GET(
         correlationId: context.correlationId,
         requestId: context.requestId,
         application: actor?.originatingApplication,
+        evidenceId: id,
       },
-      () => getEvidenceGatewayService().retrieve(actor, id, context),
+      () => getEvidenceGatewayService().retrieve(actor, id),
     );
 
     return jsonResponse({ evidence, correlationId: context.correlationId }, 200, context);

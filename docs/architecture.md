@@ -1,7 +1,7 @@
 # Architecture
 
 ```text
-caller -> authentication adapter -> App Router -> publication gateway
+Research Studio -> machine authentication -> App Router -> publication gateway
                                               |          |
                                               |          +-> authorization policy
                                               |          +-> EvidenceRegistry
@@ -14,15 +14,17 @@ caller -> authentication adapter -> App Router -> publication gateway
 
 The Phase One domain in `src/domain/publication.ts` remains the canonical
 publication, lifecycle, validation, and public-projection contract. The Phase
-Two gateway remains the orchestration boundary. Phase Three replaces
-process-memory production storage with `SqlitePublicationRepository` without
-moving persistence or transport concerns into the domain.
+Two gateway remains the orchestration boundary. SQLite storage is provided by
+`SqlitePublicationRepository` without moving persistence or transport concerns
+into the domain. Research Studio reaches that boundary through the typed HTTP
+client under `src/integrations/research-studio`.
 
 ## Boundaries
 
 - App Router handlers parse transport identity and correlation headers only.
-- Authentication establishes an actor. The built-in header adapter is for
-  development and is disabled in production unless explicitly enabled.
+- Machine authentication establishes an application actor from configured
+  bearer-token hashes or signed-request secrets. Roles are only loaded from
+  the matched server-side credential record.
 - `PublicationAuthorizationPolicy` decides what that actor may do.
 - The gateway validates DTOs, enforces expected versions, resolves registered
   evidence, applies lifecycle policy, and produces stable errors.
@@ -31,6 +33,8 @@ moving persistence or transport concerns into the domain.
   changed, audit event, and optional idempotency record.
 - `EvidenceRegistry` proves that evidence metadata was registered elsewhere.
   Dispatch stores references and never processes uploads.
+- Operational logs are transient structured entries; durable audit events
+  remain part of publication transactions and publication history.
 
 ## Disclosure boundary
 

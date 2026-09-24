@@ -150,7 +150,7 @@ describe("PublicationGatewayService Phase Three", () => {
     ).rejects.toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
     await expect(
       service.createDraft(researchDraft({ title: "Origin revision" }), researchActor, context),
-    ).rejects.toMatchObject({ code: "CONFLICT" });
+    ).rejects.toMatchObject({ code: "ORIGIN_CONFLICT" });
 
     const revised = await service.createDraft(
       researchDraft({ title: "Origin revision", expectedVersion: 1 }),

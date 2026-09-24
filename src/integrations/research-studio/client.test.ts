@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  ResearchStudioAuthorizationError,
   ResearchStudioDispatchClient,
+  ResearchStudioEditorialLockError,
+  ResearchStudioOriginConflictError,
   ResearchStudioVersionConflictError,
 } from "@/integrations/research-studio/client";
 
@@ -63,11 +66,18 @@ describe("ResearchStudioDispatchClient", () => {
     );
     const client = new ResearchStudioDispatchClient({
       baseUrl: "https://dispatch.example/",
+      applicationName: "Research Studio",
+      credential: { bearerToken: "research-studio-token" },
       fetch: fetchMock as typeof fetch,
     });
 
-    await client.createDraft({} as never, "operation-1");
+    await client.createDraft({} as never, {
+      idempotencyKey: "operation-1",
+      requestId: "request-client",
+      correlationId: "correlation-client",
+    });
     await client.retrieveLinkedPublication(publicationResponse.publication.id);
+    await expect(client.retrieveCurrentVersion(publicationResponse.publication.id)).resolves.toBe(1);
     await client.updateDraft(publicationResponse.publication.id, {} as never);
     await client.attachEvidence(publicationResponse.publication.id, {} as never);
     await client.requestLifecycle(publicationResponse.publication.id, {} as never);
@@ -75,7 +85,7 @@ describe("ResearchStudioDispatchClient", () => {
     const calls = fetchMock.mock.calls as unknown as Array<
       [RequestInfo | URL, RequestInit | undefined]
     >;
-    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
     expect(calls[0]?.[0].toString()).toBe(
       "https://dispatch.example/api/publications",
     );
@@ -83,7 +93,9 @@ describe("ResearchStudioDispatchClient", () => {
       method: "POST",
       headers: expect.objectContaining({
         "idempotency-key": "operation-1",
-        "x-mayday-application": "Research Studio",
+        authorization: "Bearer research-studio-token",
+        "x-request-id": "request-client",
+        "x-correlation-id": "correlation-client",
       }),
     });
     expect(calls[1]?.[1]).toMatchObject({ method: "GET" });
@@ -104,11 +116,75 @@ describe("ResearchStudioDispatchClient", () => {
     );
     const client = new ResearchStudioDispatchClient({
       baseUrl: "https://dispatch.example/",
+      applicationName: "Research Studio",
+      credential: { bearerToken: "research-studio-token" },
       fetch: fetchMock as typeof fetch,
     });
 
     await expect(
       client.updateDraft(publicationResponse.publication.id, {} as never),
     ).rejects.toBeInstanceOf(ResearchStudioVersionConflictError);
+  });
+
+  it.each([
+    ["ORIGIN_CONFLICT", ResearchStudioOriginConflictError],
+    ["UNAUTHORIZED", ResearchStudioAuthorizationError],
+  ])("turns %s into its typed machine-client error", async (code, errorType) => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code,
+            message: "Request rejected.",
+            correlationId: "correlation-conflict",
+          },
+        }),
+        { status: 409, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const client = new ResearchStudioDispatchClient({
+      baseUrl: "https://dispatch.example/",
+      applicationName: "Research Studio",
+      credential: { bearerToken: "research-studio-token" },
+      fetch: fetchMock as typeof fetch,
+    });
+
+    await expect(client.createDraft({} as never)).rejects.toBeInstanceOf(errorType);
+  });
+
+  it("turns an editorial lock into a typed error with current linkage state", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "EDITORIAL_LOCK",
+            message: "External synchronization is locked.",
+            correlationId: "correlation-lock",
+            details: {
+              publicationId: publicationResponse.publication.id,
+              currentVersion: 4,
+              currentLifecycleState: "review",
+            },
+          },
+        }),
+        { status: 409, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const client = new ResearchStudioDispatchClient({
+      baseUrl: "https://dispatch.example/",
+      applicationName: "Research Studio",
+      credential: { bearerToken: "research-studio-token" },
+      fetch: fetchMock as typeof fetch,
+    });
+
+    await expect(client.createDraft({} as never)).rejects.toMatchObject(
+      new ResearchStudioEditorialLockError(
+        409,
+        "correlation-lock",
+        publicationResponse.publication.id,
+        4,
+        "review",
+      ),
+    );
   });
 });

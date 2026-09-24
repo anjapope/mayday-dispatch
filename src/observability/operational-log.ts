@@ -22,6 +22,7 @@ export type OperationLogEntry = {
   requestId: string;
   application?: string;
   publicationId?: string;
+  evidenceId?: string;
   result: OperationOutcome;
   durationMs: number;
   errorCode?: string;
@@ -50,6 +51,7 @@ export type OperationLogMeta = {
   requestId: string;
   application?: string;
   publicationId?: string;
+  evidenceId?: string;
 };
 
 /**
@@ -61,6 +63,7 @@ export async function withOperationalLog<T>(
   meta: OperationLogMeta,
   fn: () => Promise<T>,
   resolvePublicationId?: (result: T) => string | undefined,
+  resolveEvidenceId?: (result: T) => string | undefined,
 ): Promise<T> {
   const startedAt = performance.now();
   try {
@@ -72,6 +75,7 @@ export async function withOperationalLog<T>(
       requestId: meta.requestId,
       application: meta.application,
       publicationId: meta.publicationId ?? resolvePublicationId?.(result),
+      evidenceId: meta.evidenceId ?? resolveEvidenceId?.(result),
       result: "success",
       durationMs: Math.round(performance.now() - startedAt),
     });
@@ -84,6 +88,7 @@ export async function withOperationalLog<T>(
       requestId: meta.requestId,
       application: meta.application,
       publicationId: meta.publicationId,
+      evidenceId: meta.evidenceId,
       result: "error",
       durationMs: Math.round(performance.now() - startedAt),
       errorCode: error instanceof GatewayError ? error.code : undefined,

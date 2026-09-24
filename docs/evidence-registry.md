@@ -3,6 +3,15 @@
 `EvidenceRegistry` resolves stable registered UUIDs. Dispatch never accepts raw
 uploads and does not run evidence processors.
 
+## HTTP API
+
+`POST /api/evidence` registers metadata and returns HTTP 201. `GET
+/api/evidence/:id` retrieves a registered item. Both are authenticated,
+controlled integration routes; registration and retrieval do not publish
+evidence or associate it with a publication. Association is the separately
+authorized `POST /api/publications/:id/evidence` route. External applications
+may associate only `public` or `citation-only` evidence.
+
 ## Registered evidence DTO
 
 ```json

@@ -180,7 +180,7 @@ export class PublicationGatewayService {
     if (existing) {
       if (request.expectedVersion === undefined) {
         throw new GatewayError(
-          "CONFLICT",
+          "ORIGIN_CONFLICT",
           "Origin identity already exists; expectedVersion is required for an origin revision.",
           { publicationId: existing.id, currentVersion: existing.revision.version },
         );
@@ -280,6 +280,7 @@ export class PublicationGatewayService {
     const publication = await this.requirePublication(id);
     this.authorization.assertCan("update", actor, publication);
     this.assertExpectedVersion(request.expectedVersion, publication);
+    this.assertExternalSynchronizationIsUnlocked(publication, actor);
     if (publication.lifecycleState !== "draft" && publication.lifecycleState !== "review") {
       throw new GatewayError(
         "CONFLICT",
@@ -612,13 +613,7 @@ export class PublicationGatewayService {
   ): Promise<GatewayPublicationResponse> {
     this.authorization.assertCan("createDraft", actor, existing);
     this.assertExpectedVersion(request.expectedVersion ?? 0, existing);
-    if (existing.lifecycleState !== "draft") {
-      throw new GatewayError(
-        "EDITORIAL_SYNC_LOCKED",
-        "External synchronization is only permitted while the publication remains a draft.",
-        { currentState: existing.lifecycleState, publicationId: existing.id },
-      );
-    }
+    this.assertExternalSynchronizationIsUnlocked(existing, actor);
     if (request.slug !== existing.slug) {
       await this.assertSlugAvailable(request.slug, existing.id);
     }
@@ -673,6 +668,23 @@ export class PublicationGatewayService {
 
   private actorScope(actor: GatewayActor | undefined): string {
     return `${actor?.originatingApplication ?? "-"}:${actor?.subjectId ?? "anonymous"}`;
+  }
+
+  private assertExternalSynchronizationIsUnlocked(
+    publication: Publication,
+    actor: GatewayActor | undefined,
+  ): void {
+    if (actorIsExternalApplication(actor) && publication.lifecycleState !== "draft") {
+      throw new GatewayError(
+        "EDITORIAL_LOCK",
+        "External synchronization is only permitted while the publication remains a draft.",
+        {
+          publicationId: publication.id,
+          currentVersion: publication.revision.version,
+          currentLifecycleState: publication.lifecycleState,
+        },
+      );
+    }
   }
 
   private async assertSlugAvailable(slug: string, currentId?: string): Promise<void> {

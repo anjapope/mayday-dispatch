@@ -26,7 +26,9 @@ export async function POST(request: Request) {
         requestId: context.requestId,
         application: actor?.originatingApplication,
       },
-      () => getEvidenceGatewayService().register(actor, body as never, context),
+      () => getEvidenceGatewayService().register(actor, body as never),
+      undefined,
+      (result) => result.id,
     );
 
     return jsonResponse({ evidence, correlationId: context.correlationId }, 201, context);

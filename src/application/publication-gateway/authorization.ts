@@ -77,6 +77,10 @@ export class RoleBasedPublicationAuthorizationPolicy implements PublicationAutho
       return;
     }
 
+    if (action === "update" && ownsExternalApplication(actor, publication)) {
+      return;
+    }
+
     if (action === "retrieve") {
       if (hasAnyRole(actor, ["editor", "publisher"])) {
         return;

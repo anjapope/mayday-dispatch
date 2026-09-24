@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:integration": "vitest run src/integrations/research-studio/http.integration.test.ts",
     "test:migrations": "vitest run src/persistence/sqlite-publication-repository.test.ts",
     "db:migrate": "node scripts/migrate.mjs"
   },

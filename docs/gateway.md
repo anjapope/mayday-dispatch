@@ -28,7 +28,7 @@ retry:
 
 - the same `Idempotency-Key` and same payload returns the stored result;
 - the same key with a different payload returns `IDEMPOTENCY_CONFLICT`;
-- no key and no `expectedVersion` returns `CONFLICT`;
+- no key and no `expectedVersion` returns `ORIGIN_CONFLICT`;
 - the current `expectedVersion` creates a legitimate new origin revision.
 
 ## Evidence association
@@ -47,12 +47,19 @@ paths, and upload-shaped fields fail validation or policy.
 
 ## Authentication versus authorization
 
-`actorFromRequest` is a development authentication adapter for
-`x-mayday-role(s)`, `x-mayday-subject`, and `x-mayday-application`. It does not
-prove identity and is ignored in production unless
-`MAYDAY_TRUST_DEV_HEADERS=true`. Deployments should replace this adapter with a
-verified identity provider. Role and resource authorization remains centralized
-in `PublicationAuthorizationPolicy` and must not move into route handlers.
+`actorFromRequest` first verifies a configured machine credential. A bearer
+token is hashed and compared to a configured hash, or an HMAC signature over
+the method, path, timestamp, and body hash is verified. The resulting actor's
+identity and roles come entirely from `MAYDAY_APPLICATION_CREDENTIALS`.
+`x-mayday-role(s)` is only a development/test adapter enabled with
+`MAYDAY_TRUST_DEV_HEADERS=true`; production-shaped clients do not use it.
+Role and resource authorization remains centralized in
+`PublicationAuthorizationPolicy` and must not move into route handlers.
+
+External applications can synchronize their own origin only while it remains
+in `draft`. Any sync/update attempted after review begins returns HTTP 409
+`EDITORIAL_LOCK`, with `publicationId`, `currentVersion`, and
+`currentLifecycleState`.
 
 ## Internal response metadata
 

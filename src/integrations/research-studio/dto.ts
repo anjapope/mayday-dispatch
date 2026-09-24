@@ -16,12 +16,12 @@ import {
 export const ResearchStudioIntegrationLinkSchema = z
   .object({
     dispatchPublicationId: z.string().uuid(),
-    version: z.number().int().positive(),
-    state: LifecycleStateSchema,
-    editorialUrl: z.string(),
-    publicUrl: z.string().optional(),
-    lastSyncedAt: z.string().datetime({ offset: true }),
-    origin: PublicationOriginInputSchema,
+    dispatchVersion: z.number().int().positive(),
+    dispatchState: LifecycleStateSchema,
+    dispatchEditorialUrl: z.string(),
+    dispatchPublicUrl: z.string().optional(),
+    dispatchLastSyncedAt: z.string().datetime({ offset: true }),
+    dispatchOriginIdentity: PublicationOriginInputSchema,
   })
   .strict();
 
@@ -33,11 +33,11 @@ export function toIntegrationLink(
 ): ResearchStudioIntegrationLink {
   return ResearchStudioIntegrationLinkSchema.parse({
     dispatchPublicationId: response.originLink.publicationId,
-    version: response.originLink.version,
-    state: response.publication.lifecycleState,
-    editorialUrl: response.originLink.editorialUrl,
-    publicUrl: response.originLink.publicUrl,
-    lastSyncedAt: response.originLink.lastSynchronizedAt,
-    origin: response.originLink.origin,
+    dispatchVersion: response.originLink.version,
+    dispatchState: response.publication.lifecycleState,
+    dispatchEditorialUrl: response.originLink.editorialUrl,
+    dispatchPublicUrl: response.originLink.publicUrl,
+    dispatchLastSyncedAt: response.originLink.lastSynchronizedAt,
+    dispatchOriginIdentity: response.originLink.origin,
   });
 }

@@ -10,11 +10,6 @@ import {
 } from "@/application/evidence-gateway/dto";
 import type { EvidenceRegistry, RegisteredEvidence } from "@/evidence/registry";
 
-export type EvidenceRequestContext = {
-  correlationId: string;
-  requestId: string;
-};
-
 type EvidenceGatewayServiceOptions = {
   registry: EvidenceRegistry;
   authorization?: EvidenceAuthorizationPolicy;
@@ -43,7 +38,6 @@ export class EvidenceGatewayService {
   async register(
     actor: GatewayActor | undefined,
     request: RegisterEvidenceRequest,
-    _context: EvidenceRequestContext,
   ): Promise<RegisteredEvidence> {
     this.authorization.assertCan("register", actor);
 
@@ -65,7 +59,6 @@ export class EvidenceGatewayService {
   async retrieve(
     actor: GatewayActor | undefined,
     id: string,
-    _context: EvidenceRequestContext,
   ): Promise<RegisteredEvidence> {
     this.authorization.assertCan("retrieve", actor);
 
