@@ -226,6 +226,7 @@ export class PublicationGatewayService {
         verificationStatus: request.verificationStatus,
         internalNotes: request.internalNotes,
       },
+      extensions: request.extensions ?? {},
       evidence: evidence.map(this.toEvidenceReference),
       sources: request.sources,
     });
@@ -315,6 +316,7 @@ export class PublicationGatewayService {
           request.verificationStatus ?? publication.provenance.verificationStatus,
         internalNotes: request.internalNotes ?? publication.provenance.internalNotes,
       },
+      extensions: request.extensions ?? publication.extensions,
     });
     const saved = await this.persist(updated, {
       expectedVersion: request.expectedVersion,

@@ -18,6 +18,10 @@ Secrets are supplied through deployment configuration and are never logged,
 stored in source, returned by an API, or copied to audit events. Configure
 roles with the credential record; request headers cannot grant roles.
 
+Configure Overwatch as its own credential record with `applicationName` set to
+`overwatch`. Do not reuse Research Studio credentials: the resolved
+application identity is also used to enforce origin ownership.
+
 Authentication proves the calling application and creates `GatewayActor`.
 Authorization remains a separate `PublicationAuthorizationPolicy` or
 `EvidenceAuthorizationPolicy` decision. Development identity headers are

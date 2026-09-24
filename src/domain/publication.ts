@@ -140,6 +140,9 @@ export const ProvenanceSchema = z.object({
   internalNotes: z.string().trim().min(1).optional(),
 });
 
+export const PublicationExtensionsSchema = z.record(z.unknown()).default({});
+export type PublicationExtensions = z.infer<typeof PublicationExtensionsSchema>;
+
 export const RevisionMetadataSchema = z.object({
   version: z.number().int().positive(),
   updatedAt: z.string().datetime({ offset: true }),
@@ -164,6 +167,7 @@ export const PublicationSchema = z
     tags: z.array(z.string().trim().min(1)).default([]),
     revision: RevisionMetadataSchema,
     provenance: ProvenanceSchema,
+    extensions: PublicationExtensionsSchema,
     evidence: z.array(EvidenceReferenceSchema).default([]),
     sources: z.array(CitationSchema).default([]),
   })

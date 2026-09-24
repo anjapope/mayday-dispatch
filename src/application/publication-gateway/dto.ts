@@ -3,6 +3,7 @@ import {
   CitationSchema,
   LifecycleStateSchema,
   PublicationSchema,
+  PublicationExtensionsSchema,
   PublicationTypeSchema,
   PublicationVisibilitySchema,
   RevisionMetadataSchema,
@@ -65,6 +66,7 @@ export const CreateDraftPublicationRequestSchema = DraftContentSchema.extend({
   createdBy: z.string().trim().min(1),
   verificationStatus: z.enum(["unverified", "corroborated", "verified"]).default("unverified"),
   internalNotes: z.string().trim().min(1).optional(),
+  extensions: PublicationExtensionsSchema.optional(),
   evidenceIds: z.array(z.string().uuid()).default([]),
   expectedVersion: z.number().int().nonnegative().optional(),
 }).strict();
@@ -73,6 +75,7 @@ export const UpdatePublicationRequestSchema = DraftContentSchema.partial()
   .extend({
     verificationStatus: z.enum(["unverified", "corroborated", "verified"]).optional(),
     internalNotes: z.string().trim().min(1).optional(),
+    extensions: PublicationExtensionsSchema.optional(),
     revisionSummary: z.string().trim().min(1).default("Editorial update."),
     expectedVersion: z.number().int().positive(),
   })

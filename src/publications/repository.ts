@@ -464,6 +464,9 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
         verificationStatus: String(row.verification_status),
         internalNotes: row.internal_notes ? String(row.internal_notes) : undefined,
       },
+      extensions: row.extensions_json
+        ? JSON.parse(String(row.extensions_json))
+        : {},
       evidence: evidenceRows.map((evidence) => ({
         id: String(evidence.id),
         title: String(evidence.title),
@@ -502,6 +505,7 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
       publication.provenance.createdAt,
       publication.provenance.verificationStatus,
       publication.provenance.internalNotes ?? null,
+      JSON.stringify(publication.extensions),
     ] as const;
 
     if (insert) {
@@ -510,8 +514,8 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
           INSERT INTO publications (
             slug, type, lifecycle_state, visibility, title, excerpt, body_json,
             published_at, reading_time_minutes, tags_json, current_version,
-            created_by, created_at, verification_status, internal_notes, id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            created_by, created_at, verification_status, internal_notes, extensions_json, id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(...values, publication.id);
       this.database
@@ -540,7 +544,7 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
           slug = ?, type = ?, lifecycle_state = ?, visibility = ?, title = ?,
           excerpt = ?, body_json = ?, published_at = ?, reading_time_minutes = ?,
           tags_json = ?, current_version = ?, created_by = ?, created_at = ?,
-          verification_status = ?, internal_notes = ?
+          verification_status = ?, internal_notes = ?, extensions_json = ?
         WHERE id = ?
       `)
       .run(...values, publication.id);

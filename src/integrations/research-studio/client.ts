@@ -1,4 +1,3 @@
-import { createHash, createHmac, randomUUID } from "node:crypto";
 import {
   GatewayErrorResponseSchema,
   GatewayPublicationResponseSchema,
@@ -8,6 +7,11 @@ import {
   type TransitionPublicationRequest,
   type UpdatePublicationRequest,
 } from "@/application/publication-gateway/dto";
+import {
+  DispatchHttpTransport,
+  type DispatchMachineCredential,
+  type DispatchRequestOptions,
+} from "@/integrations/dispatch-client/transport";
 
 export class ResearchStudioDispatchError extends Error {
   constructor(
@@ -54,15 +58,8 @@ export class ResearchStudioEditorialLockError extends ResearchStudioDispatchErro
   }
 }
 
-export type ResearchStudioMachineCredential =
-  | { bearerToken: string; hmacSecret?: never }
-  | { hmacSecret: string; bearerToken?: never };
-
-export type ResearchStudioRequestOptions = {
-  correlationId?: string;
-  requestId?: string;
-  idempotencyKey?: string;
-};
+export type ResearchStudioMachineCredential = DispatchMachineCredential;
+export type ResearchStudioRequestOptions = DispatchRequestOptions;
 
 export type ResearchStudioClientOptions = {
   baseUrl: string;
@@ -72,10 +69,10 @@ export type ResearchStudioClientOptions = {
 };
 
 export class ResearchStudioDispatchClient {
-  private readonly fetchImplementation: typeof fetch;
+  private readonly transport: DispatchHttpTransport;
 
   constructor(private readonly options: ResearchStudioClientOptions) {
-    this.fetchImplementation = options.fetch ?? fetch;
+    this.transport = new DispatchHttpTransport(options);
   }
 
   createDraft(
@@ -130,21 +127,7 @@ export class ResearchStudioDispatchClient {
     body?: unknown,
     options: ResearchStudioRequestOptions = {},
   ): Promise<GatewayPublicationResponse> {
-    const serializedBody = body === undefined ? "" : JSON.stringify(body);
-    const requestId = options.requestId ?? randomUUID();
-    const headers = this.authenticationHeaders(method, path, serializedBody);
-    const response = await this.fetchImplementation(new URL(path, this.options.baseUrl), {
-      method,
-      headers: {
-        "content-type": "application/json",
-        "x-request-id": requestId,
-        "x-correlation-id": options.correlationId ?? requestId,
-        ...headers,
-        ...(options.idempotencyKey ? { "idempotency-key": options.idempotencyKey } : {}),
-      },
-      body: body === undefined ? undefined : serializedBody,
-    });
-    const json: unknown = await response.json();
+    const { response, json } = await this.transport.send(path, method, body, options);
     if (!response.ok) {
       const error = GatewayErrorResponseSchema.parse(json).error;
       if (error.code === "STALE_VERSION") {
@@ -181,25 +164,4 @@ export class ResearchStudioDispatchClient {
     return GatewayPublicationResponseSchema.parse(json);
   }
 
-  private authenticationHeaders(
-    method: string,
-    path: string,
-    body: string,
-  ): Record<string, string> {
-    if ("bearerToken" in this.options.credential) {
-      return { authorization: `Bearer ${this.options.credential.bearerToken}` };
-    }
-
-    const timestamp = Date.now().toString();
-    const bodyHash = createHash("sha256").update(body, "utf8").digest("hex");
-    const payload = `${method}\n${path}\n${timestamp}\n${bodyHash}`;
-    const signature = createHmac("sha256", this.options.credential.hmacSecret)
-      .update(payload, "utf8")
-      .digest("hex");
-    return {
-      "x-mayday-app": this.options.applicationName,
-      "x-mayday-timestamp": timestamp,
-      "x-mayday-signature": signature,
-    };
-  }
 }

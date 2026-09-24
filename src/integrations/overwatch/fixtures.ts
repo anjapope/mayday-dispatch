@@ -1,0 +1,73 @@
+import type { OverwatchPublicationInput } from "@/integrations/overwatch/dto";
+
+export const overwatchPublicationFixtures: readonly OverwatchPublicationInput[] = [
+  {
+    overwatchObjectId: "ow:situation:2026-09-24",
+    projectId: "monitor:regional-security",
+    title: "Regional situation report",
+    summary: "A monitored change in regional conditions.",
+    body: ["Two public sources report the same change."],
+    publicationType: "situation-report",
+    slug: "regional-situation-report",
+    tags: ["situation-report"],
+    visibility: "public",
+    readingTimeMinutes: 3,
+    citations: [{
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      title: "Regional notice",
+      authors: ["Regional Observatory"],
+      url: "https://example.org/regional-notice",
+    }],
+    assessment: {
+      confidenceLevel: "moderate",
+      geographicScope: "Eastern region",
+      temporalScope: "2026-09-24",
+    },
+  },
+  {
+    overwatchObjectId: "ow:brief:2026-09-24",
+    projectId: "workspace:strategic-analysis",
+    title: "Strategic intelligence brief",
+    summary: "A concise assessment for decision support.",
+    body: [
+      "The available evidence supports a limited assessment.",
+      "Additional collection is required before stronger conclusions are warranted.",
+    ],
+    publicationType: "intelligence-brief",
+    slug: "strategic-intelligence-brief",
+    tags: ["intelligence", "brief"],
+    visibility: "internal",
+    readingTimeMinutes: 5,
+    citations: [{
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      title: "Analytic source",
+      authors: ["Overwatch Desk"],
+    }],
+    assessment: {
+      confidenceLevel: "low",
+      sourceCount: 1,
+      analyticCaveats: ["Intent cannot be inferred from the available reporting."],
+      methodologyNote: "Structured comparison of public reporting.",
+    },
+  },
+  {
+    overwatchObjectId: "ow:monitoring:2026-09-24",
+    projectId: "monitor:port-activity",
+    title: "Port activity monitoring dispatch",
+    summary: "A short update for recurring monitoring.",
+    body: ["No material change was observed during the reporting period."],
+    publicationType: "short-dispatch",
+    slug: "port-activity-monitoring-dispatch",
+    tags: ["monitoring"],
+    visibility: "public",
+    readingTimeMinutes: 2,
+    citations: [{
+      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      title: "Port notice",
+      authors: ["Port Authority"],
+      url: "https://example.org/port-notice",
+    }],
+    seriesId: "port-activity",
+    reportingPeriod: "2026-09-24",
+  },
+];

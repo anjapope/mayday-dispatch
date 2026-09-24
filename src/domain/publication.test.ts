@@ -71,6 +71,8 @@ describe("evidence visibility", () => {
     expect("visibility" in publicPublication).toBe(false);
     expect(JSON.stringify(publicPublication)).not.toContain("Case OW-26-0803");
     expect(JSON.stringify(publicPublication)).not.toContain("Maritime Signals");
+    expect(JSON.stringify(publicPublication)).not.toContain("confidenceRationale");
+    expect(JSON.stringify(publicPublication)).not.toContain("extensions");
   });
 
   it("does not create public projections for non-public publications", () => {

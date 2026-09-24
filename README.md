@@ -4,7 +4,8 @@ Mayday Dispatch is a domain-first publishing service for evidence-led research,
 OSINT reports, and operational dispatches. Phase Four connects Research Studio
 to Dispatch's authenticated HTTP gateway, durable SQLite persistence, Evidence
 Registry API, structured operations logging, and editorial synchronization
-locking while retaining the domain and gateway boundaries.
+locking while retaining the domain and gateway boundaries. Overwatch is a
+second authenticated publishing client of that same gateway.
 
 ## Stack
 
@@ -29,7 +30,7 @@ directory are ignored by Git.
 | `npm run db:migrate` | Apply ordered, transactional SQL migrations |
 | `npm run test:migrations` | Verify setup, restart, schema, and transaction behavior |
 | `npm test` | Run all tests |
-| `npm run test:integration` | Run the Research Studio HTTP-to-SQLite integration suite |
+| `npm run test:integration` | Run the authenticated HTTP-to-SQLite integration suite |
 | `npm run typecheck` | Run strict TypeScript checks |
 | `npm run lint` | Run ESLint |
 | `npm run build` | Build the production application |
@@ -67,4 +68,5 @@ See [architecture](docs/architecture.md), [gateway](docs/gateway.md),
 [evidence registry](docs/evidence-registry.md),
 [service authentication](docs/service-authentication.md),
 [operations](docs/operations.md), and
-[Research Studio integration](docs/research-studio-integration.md).
+[Research Studio integration](docs/research-studio-integration.md), and
+[Overwatch integration](docs/overwatch-integration.md).

@@ -11,11 +11,13 @@ import type {
   UpdatePublicationRequest,
 } from "@/application/publication-gateway/dto";
 import { ResearchStudioDispatchClient, ResearchStudioVersionConflictError } from "@/integrations/research-studio/client";
+import { OverwatchDispatchClient } from "@/integrations/overwatch/client";
 import { runMigrations } from "@/persistence/migrations";
 import type { SqlitePublicationRepository } from "@/publications/repository";
 
 const databasePath = join(tmpdir(), `mayday-dispatch-phase-four-${process.pid}.sqlite`);
 const researchStudioToken = "research-studio-machine-token";
+const overwatchToken = "overwatch-machine-token";
 const editorialToken = "dispatch-editorial-machine-token";
 
 const evidence = {
@@ -138,6 +140,12 @@ beforeAll(async () => {
       subjectId: "dispatch-editorial-service",
       roles: ["editor", "publisher"],
       tokenHash: hash(editorialToken),
+    },
+    {
+      applicationName: "overwatch",
+      subjectId: "overwatch-service",
+      roles: ["external-application"],
+      tokenHash: hash(overwatchToken),
     },
   ]);
   delete process.env.MAYDAY_TRUST_DEV_HEADERS;
@@ -298,5 +306,208 @@ describe("Research Studio HTTP to Dispatch SQLite integration", () => {
       visibility: "public",
     });
     firstRepository.close();
+  });
+
+  it("supports an authenticated Overwatch situation report without cross-application impersonation", async () => {
+    const overwatchClient = new OverwatchDispatchClient({
+      baseUrl: "https://dispatch.integration.test",
+      credential: { bearerToken: overwatchToken },
+      fetch: routeFetch as typeof fetch,
+    });
+    const editorialClient = new ResearchStudioDispatchClient({
+      baseUrl: "https://dispatch.integration.test",
+      applicationName: "Dispatch Editorial",
+      credential: { bearerToken: editorialToken },
+      fetch: routeFetch as typeof fetch,
+    });
+    const overwatchEvidenceId = "66666666-6666-4666-8666-666666666666";
+    const evidenceResponse = await routeFetch("https://dispatch.integration.test/api/evidence", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${overwatchToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        id: overwatchEvidenceId,
+        title: "Mayday3 processed source collection",
+        mediaType: "application/json",
+        source: "Mayday3",
+        provenance: "Mayday3 collection run 2026-09-24",
+        visibility: "public",
+        checksum: "b".repeat(64),
+        processor: "mayday3-normalizer",
+        status: "ready",
+        publicUrl: "https://example.org/overwatch/source-collection",
+      }),
+    });
+    expect(evidenceResponse.status).toBe(201);
+    const created = await overwatchClient.submit({
+      overwatchObjectId: "ow:situation:2026-09-24",
+      projectId: "monitor:regional-security",
+      title: "Regional situation report",
+      summary: "A monitored change in regional conditions.",
+      body: [
+        "Two public sources report the same change during the current reporting period.",
+        "The assessment remains moderate confidence pending additional corroboration.",
+      ],
+      publicationType: "situation-report",
+      slug: "regional-situation-report",
+      tags: ["situation-report", "monitoring"],
+      visibility: "public",
+      readingTimeMinutes: 3,
+      citations: [{
+        id: "44444444-4444-4444-8444-444444444444",
+        title: "Regional public notice",
+        authors: ["Regional Observatory"],
+        url: "https://example.org/regional-notice",
+      }],
+      evidenceIds: [overwatchEvidenceId],
+      assessment: {
+        confidenceLevel: "moderate",
+        sourceCount: 2,
+        geographicScope: "Eastern region",
+        temporalScope: "2026-09-24",
+        confidenceRationale: "Two independent public sources agree.",
+      },
+      seriesId: "regional-monitoring",
+      reportingPeriod: "2026-09-24",
+      idempotencyKey: "ow-situation-2026-09-24",
+    });
+    expect(created.originLink.origin).toMatchObject({
+      originatingApplication: "overwatch",
+      originatingProject: "monitor:regional-security",
+      stableObjectId: "ow:situation:2026-09-24",
+    });
+    const replayed = await overwatchClient.submit({
+      overwatchObjectId: "ow:situation:2026-09-24",
+      projectId: "monitor:regional-security",
+      title: "Regional situation report",
+      summary: "A monitored change in regional conditions.",
+      body: [
+        "Two public sources report the same change during the current reporting period.",
+        "The assessment remains moderate confidence pending additional corroboration.",
+      ],
+      publicationType: "situation-report",
+      slug: "regional-situation-report",
+      tags: ["situation-report", "monitoring"],
+      visibility: "public",
+      readingTimeMinutes: 3,
+      citations: [{
+        id: "44444444-4444-4444-8444-444444444444",
+        title: "Regional public notice",
+        authors: ["Regional Observatory"],
+        url: "https://example.org/regional-notice",
+      }],
+      evidenceIds: [overwatchEvidenceId],
+      assessment: {
+        confidenceLevel: "moderate",
+        sourceCount: 2,
+        geographicScope: "Eastern region",
+        temporalScope: "2026-09-24",
+        confidenceRationale: "Two independent public sources agree.",
+      },
+      seriesId: "regional-monitoring",
+      reportingPeriod: "2026-09-24",
+      idempotencyKey: "ow-situation-2026-09-24",
+    });
+    expect(replayed.publication.id).toBe(created.publication.id);
+    const updated = await overwatchClient.update(created.publication.id, {
+      overwatchObjectId: "ow:situation:2026-09-24",
+      projectId: "monitor:regional-security",
+      title: "Regional situation report updated",
+      summary: "A monitored change in regional conditions.",
+      body: ["Two public sources now report the same change."],
+      publicationType: "situation-report",
+      slug: "regional-situation-report",
+      readingTimeMinutes: 3,
+      expectedVersion: 1,
+    });
+    expect(updated.originLink.version).toBe(2);
+    await expect(overwatchClient.update(created.publication.id, {
+      overwatchObjectId: "ow:situation:2026-09-24",
+      projectId: "monitor:regional-security",
+      title: "Stale update",
+      summary: "Stale",
+      body: ["Stale"],
+      publicationType: "situation-report",
+      slug: "regional-situation-report",
+      readingTimeMinutes: 3,
+      expectedVersion: 1,
+    })).rejects.toMatchObject({ code: "STALE_VERSION" });
+    const review = await editorialClient.requestLifecycle(created.publication.id, {
+      to: "review",
+      expectedVersion: 2,
+      revisionSummary: "Submit Overwatch report for editorial review.",
+    });
+    expect(review.originLink.version).toBe(3);
+    await expect(overwatchClient.update(created.publication.id, {
+      overwatchObjectId: "ow:situation:2026-09-24",
+      projectId: "monitor:regional-security",
+      title: "Locked update",
+      summary: "Locked",
+      body: ["Locked"],
+      publicationType: "situation-report",
+      slug: "regional-situation-report",
+      readingTimeMinutes: 3,
+      expectedVersion: 3,
+    })).rejects.toMatchObject({ code: "EDITORIAL_LOCK" });
+    const researchClient = new ResearchStudioDispatchClient({
+      baseUrl: "https://dispatch.integration.test",
+      credential: { bearerToken: researchStudioToken },
+      applicationName: "Research Studio",
+      fetch: routeFetch as typeof fetch,
+    });
+    await expect(researchClient.createDraft({
+      slug: "research-cannot-impersonate-overwatch",
+      type: "situation-report",
+      title: "Impersonation attempt",
+      excerpt: "Rejected.",
+      body: ["Rejected."],
+      readingTimeMinutes: 1,
+      tags: [],
+      visibility: "internal",
+      origin: {
+        kind: "open-source-intelligence",
+        label: "Overwatch",
+        url: "https://example.org/overwatch",
+        originatingApplication: "overwatch",
+        originatingProject: "monitor:regional-security",
+        stableObjectId: "ow:impersonation",
+      },
+      createdBy: "Overwatch",
+      verificationStatus: "unverified",
+      evidenceIds: [],
+      sources: [{
+        id: "77777777-7777-4777-8777-777777777777",
+        title: "Source",
+        authors: ["Source"],
+        url: "https://example.org/source",
+      }],
+    })).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    const invalidClient = new OverwatchDispatchClient({
+      baseUrl: "https://dispatch.integration.test",
+      credential: { bearerToken: "invalid-overwatch-token" },
+      fetch: routeFetch as typeof fetch,
+    });
+    await expect(invalidClient.submit({
+      overwatchObjectId: "ow:invalid",
+      projectId: "monitor:regional-security",
+      title: "Invalid",
+      summary: "Invalid",
+      body: ["Invalid"],
+      publicationType: "short-dispatch",
+      slug: "invalid-overwatch",
+      readingTimeMinutes: 1,
+      tags: [],
+      visibility: "internal",
+      evidenceIds: [],
+      citations: [{
+        id: "55555555-5555-4555-8555-555555555555",
+        title: "Source",
+        authors: ["Source"],
+        url: "https://example.org/source",
+      }],
+    })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
 });
