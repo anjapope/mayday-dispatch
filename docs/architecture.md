@@ -56,3 +56,9 @@ Validation and authorization happen before persistence. SQLite writes use
 checked again inside that transaction, so two callers that read the same
 version cannot both commit. Raw SQLite messages are translated to stable
 gateway errors.
+# Public site
+
+The public Next.js routes consume `src/publications/public-query.ts`, which
+operates exclusively on the `toPublicPublication` boundary. This keeps public
+search, browsing, series, topics, and related content separate from editorial
+and evidence-registry metadata.

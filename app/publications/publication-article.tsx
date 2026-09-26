@@ -1,6 +1,8 @@
 import type { PublicPublication } from "@/domain/publication";
+import Link from "next/link";
+import { PublicationCard } from "./publication-card";
 
-export function PublicationArticle({ publication }: { publication: PublicPublication }) {
+export function PublicationArticle({ publication, related = [] }: { publication: PublicPublication; related?: PublicPublication[] }) {
   return (
     <article>
       <header className="article-header">
@@ -27,15 +29,17 @@ export function PublicationArticle({ publication }: { publication: PublicPublica
           <div><dt>Published</dt><dd><time dateTime={publication.publishedAt}>{publication.publishedAt}</time></dd></div>
           <div><dt>Revision</dt><dd>v{publication.revision.version}</dd></div>
           <div><dt>Reading time</dt><dd>{publication.readingTimeMinutes} minutes</dd></div>
+          {publication.reportingPeriod && <div><dt>Reporting period</dt><dd>{publication.reportingPeriod}</dd></div>}
+          {publication.seriesId && <div><dt>Series</dt><dd><Link href={`/series/${publication.seriesId}`}>{publication.seriesId}</Link></dd></div>}
         </dl>
       </header>
       <section className="body-copy" aria-label="Publication body">
         {publication.body.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
       </section>
-      {publication.relatedPublicationIds && publication.relatedPublicationIds.length > 0 && (
+      {related.length > 0 && (
         <section className="supporting-section" aria-labelledby="related-heading">
           <h2 id="related-heading">Related publications</h2>
-          <p>This publication is part of a related reporting series.</p>
+          <div className="publication-grid">{related.map((item) => <PublicationCard key={item.id} publication={item} />)}</div>
         </section>
       )}
       {publication.evidence.length > 0 && (
@@ -46,7 +50,8 @@ export function PublicationArticle({ publication }: { publication: PublicPublica
               <li key={evidence.id}>
                 <strong>{evidence.title}</strong>
                 {evidence.description && <p>{evidence.description}</p>}
-                {evidence.url && <a href={evidence.url} rel="noreferrer">Open reference</a>}
+                {evidence.url && <p><a href={evidence.url} rel="noreferrer">Open public reference</a></p>}
+                {!evidence.url && evidence.citation && <p className="citation">Citation-only reference; the underlying artifact is not publicly downloadable.</p>}
                 {evidence.citation && <p className="citation">{evidence.citation.authors.join(", ")}. <em>{evidence.citation.title}</em>{evidence.citation.publisher ? `, ${evidence.citation.publisher}` : ""}.</p>}
               </li>
             ))}
@@ -64,6 +69,7 @@ export function PublicationArticle({ publication }: { publication: PublicPublica
           ))}
         </ol>
       </section>
+      <section className="supporting-section" aria-labelledby="history-heading"><h2 id="history-heading">Publication history</h2><p>Originally published {publication.publishedAt}. Current version: {publication.revision.version} ({publication.revision.revisionType.replaceAll("-", " ")}), updated {publication.revision.updatedAt}.</p></section>
     </article>
   );
 }

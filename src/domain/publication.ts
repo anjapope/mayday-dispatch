@@ -250,6 +250,8 @@ export type PublicPublication = Pick<
   evidence: PublicEvidence[];
   methodology?: string;
   caveat?: string;
+  seriesId?: string;
+  reportingPeriod?: string;
   notice?: PublicNotice;
   relatedPublicationIds?: string[];
 };
@@ -282,6 +284,14 @@ export function toPublicPublication(publication: Publication): PublicPublication
     caveat:
       typeof publication.extensions.caveat === "string"
         ? publication.extensions.caveat
+        : undefined,
+    seriesId:
+      typeof (publication.extensions.overwatch as Record<string, unknown> | undefined)?.seriesId === "string"
+        ? String((publication.extensions.overwatch as Record<string, unknown>).seriesId)
+        : undefined,
+    reportingPeriod:
+      typeof (publication.extensions.overwatch as Record<string, unknown> | undefined)?.reportingPeriod === "string"
+        ? String((publication.extensions.overwatch as Record<string, unknown>).reportingPeriod)
         : undefined,
     notice:
       publication.extensions.publicNotice &&

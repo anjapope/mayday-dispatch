@@ -91,6 +91,7 @@ See [architecture](docs/architecture.md), [gateway](docs/gateway.md),
 [Mayday3 integration](docs/mayday3-integration.md),
 [evidence provenance](docs/evidence-provenance.md),
 [evidence discovery](docs/evidence-discovery.md),
+[public site](docs/public-site.md),
 [service authentication](docs/service-authentication.md),
 [operations](docs/operations.md), and
 [Research Studio integration](docs/research-studio-integration.md), and

@@ -29,3 +29,9 @@ so a future driver replacement does not change gateway contracts.
 
 Archived publications are retained and excluded from public routes; there is no
 hard-delete publication operation. Withdrawal remains deferred beyond Phase Six.
+# Public-site operation
+
+The public site reads the same persisted Dispatch publication records as the
+editorial application, but through the public projection/query layer. Verify
+public routes after publication lifecycle or projection changes so drafts,
+internal material, and private evidence cannot surface.

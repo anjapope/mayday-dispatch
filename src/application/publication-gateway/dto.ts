@@ -177,6 +177,8 @@ export const PublicPublicationResponseSchema = z
         evidence: z.array(PublicEvidenceResponseSchema),
         methodology: z.string().optional(),
         caveat: z.string().optional(),
+        seriesId: z.string().optional(),
+        reportingPeriod: z.string().optional(),
         notice: z.object({
           kind: z.enum(["correction", "update"]),
           note: z.string(),

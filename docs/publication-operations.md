@@ -20,3 +20,8 @@ event, then retains the publication outside public routing. It never deletes the
 The editorial preview calls the same `toPublicPublication` projection used by the public route.
 It never exposes origin IDs, internal provenance, private evidence, request metadata, or internal
 assessment fields.
+# Public rendering
+
+Only public publications in `published` or `updated` lifecycle states are
+eligible for homepage, browse, search, series, topic, and feed-style public
+surfaces. Corrections and updates render from the public notice projection.
