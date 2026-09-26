@@ -92,6 +92,7 @@ See [architecture](docs/architecture.md), [gateway](docs/gateway.md),
 [evidence provenance](docs/evidence-provenance.md),
 [evidence discovery](docs/evidence-discovery.md),
 [public site](docs/public-site.md),
+[public visual system](docs/public-visual-system.md),
 [service authentication](docs/service-authentication.md),
 [operations](docs/operations.md), and
 [Research Studio integration](docs/research-studio-integration.md), and

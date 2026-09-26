@@ -4,7 +4,7 @@ import "./globals.css";
 import { PublicSiteShell } from "./public-site-shell";
 
 export const metadata: Metadata = {
-  title: "Mayday Dispatch",
+  title: "The Golden Horn",
   description: "Research, evidence, and intelligence from the Mayday system.",
 };
 

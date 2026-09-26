@@ -14,3 +14,9 @@ using public series IDs and shared public tags.
 Public evidence lists distinguish public URLs from citation-only references.
 Corrections, substantive updates, and revision history use only projected,
 public-safe notice and revision metadata.
+
+The Phase 9.5 navigation model places Global Monitor, Analysis, Forecast,
+Services, and Contact in the primary navigation. These destinations classify
+already-public publications without duplicating records or changing the
+underlying publication authority model. The public visual system is documented
+in [public-visual-system.md](./public-visual-system.md).

@@ -1,0 +1,3 @@
+import type { Metadata } from "next";
+export const metadata: Metadata = { title: "Contact | Mayday Dispatch", description: "Contact Mayday Dispatch." };
+export default function ContactPage() { return <main className="shell detail"><header className="masthead"><h1>Contact</h1><p className="lede">For general, research, service, correction, or source inquiries.</p></header><section className="body-copy"><p>A production contact channel is not yet published. This page will provide an authenticated or verified contact method when one is available.</p><p>For a correction or source inquiry, retain the publication title, URL, and the specific information at issue so the editorial team can review it accurately.</p></section></main>; }

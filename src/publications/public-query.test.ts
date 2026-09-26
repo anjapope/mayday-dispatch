@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PublicPublication } from "@/domain/publication";
+import { publicSectionFor } from "@/publications/public-query";
 
 function matchesPublicBrowse(
   publication: PublicPublication,
@@ -29,5 +30,11 @@ describe("public publication browse filters", () => {
     expect(matchesPublicBrowse(publication, { type: "situation-report" })).toBe(true);
     expect(matchesPublicBrowse(publication, { seriesId: "climate-watch" })).toBe(true);
     expect(matchesPublicBrowse(publication, { query: "internal provenance" })).toBe(false);
+  });
+
+  it("classifies public work into restrained public sections", () => {
+    expect(publicSectionFor(publication)).toBe("global-monitor");
+    expect(publicSectionFor({ ...publication, type: "academic-research-article" })).toBe("analysis");
+    expect(publicSectionFor({ ...publication, tags: ["forecast"] })).toBe("forecast");
   });
 });
