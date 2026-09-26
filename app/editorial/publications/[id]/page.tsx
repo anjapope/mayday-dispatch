@@ -108,10 +108,16 @@ export default async function EditorialPublicationPage({ params }: Props) {
               <strong>{evidence.title}</strong> — <strong>{evidence.visibility}</strong>
               <dl className="metadata">
                 <div><dt>Evidence ID</dt><dd>{evidence.id}</dd></div>
+                <div><dt>Version</dt><dd>v{evidence.evidenceVersion ?? 1}</dd></div>
                 <div><dt>Media type</dt><dd>{evidence.mediaType ?? "unspecified"}</dd></div>
                 <div><dt>Source</dt><dd>{evidence.source ?? "unspecified"}</dd></div>
                 <div><dt>Processor</dt><dd>{evidence.processor ?? "unspecified"}</dd></div>
                 <div><dt>Processing state</dt><dd>{evidence.status ?? "unspecified"}</dd></div>
+                <div><dt>Acquired</dt><dd>{evidence.acquisitionAt ?? "unspecified"}</dd></div>
+                <div><dt>Processed</dt><dd>{evidence.processedAt ?? "unspecified"}</dd></div>
+                <div><dt>Checksum algorithm</dt><dd>{evidence.checksumAlgorithm ?? "unspecified"}</dd></div>
+                <div><dt>Parent evidence</dt><dd>{evidence.parentEvidenceId ?? "none"}</dd></div>
+                <div><dt>Derivation</dt><dd>{evidence.derivationType ?? "original"}</dd></div>
                 <div><dt>Provenance</dt><dd>{evidence.evidenceProvenance ?? "unspecified"}</dd></div>
               </dl>
               {evidence.citation && <p>{evidence.citation.title}</p>}

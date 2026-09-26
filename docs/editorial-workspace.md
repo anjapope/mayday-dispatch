@@ -32,6 +32,7 @@ All writes retain optimistic version checks, revision history, lifecycle history
 audit events provided by the publication gateway.
 
 The review panel displays registered evidence metadata (visibility, media type, processor,
-processing state, citation, public URL, and provenance summary) without loading raw private
+processing state, version, acquisition/processing timestamps, checksum algorithm, parent/
+derivation lineage, citation, public URL, and provenance summary) without loading raw private
 evidence content. Corrections, substantive updates, and archive reasons are represented as
 typed revision/audit metadata.

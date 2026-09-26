@@ -30,9 +30,11 @@ const evidence: RegisteredEvidence = {
   provenance: "Mayday3 registration",
   visibility: "public",
   checksum: "b".repeat(64),
+  checksumAlgorithm: "sha256",
   status: "ready",
   publicUrl: "https://example.org/evidence/data.csv",
   registeredAt: "2026-09-22T19:30:10.431Z",
+  version: 1,
 };
 
 function draft(overrides: Record<string, unknown> = {}) {
@@ -94,12 +96,15 @@ describe("SqlitePublicationRepository", () => {
         "lifecycle_history",
         "audit_events",
         "idempotency_keys",
+        "evidence_revisions",
+        "evidence_audit_events",
+        "evidence_idempotency_keys",
         "schema_migrations",
       ]),
     );
     expect(
       repository.database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get(),
-    ).toMatchObject({ count: 3 });
+    ).toMatchObject({ count: 4 });
     repository.close();
   });
 

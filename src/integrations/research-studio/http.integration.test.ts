@@ -12,6 +12,7 @@ import type {
 } from "@/application/publication-gateway/dto";
 import { ResearchStudioDispatchClient, ResearchStudioVersionConflictError } from "@/integrations/research-studio/client";
 import { OverwatchDispatchClient } from "@/integrations/overwatch/client";
+import { Mayday3EvidenceClient } from "@/integrations/mayday3/client";
 import { overwatchPublicationFixtures } from "@/integrations/overwatch/fixtures";
 import { toPublicPublication } from "@/domain/publication";
 import { runMigrations } from "@/persistence/migrations";
@@ -20,6 +21,7 @@ import type { SqlitePublicationRepository } from "@/publications/repository";
 const databasePath = join(tmpdir(), `mayday-dispatch-phase-four-${process.pid}.sqlite`);
 const researchStudioToken = "research-studio-machine-token";
 const overwatchToken = "overwatch-machine-token";
+const mayday3Token = "mayday3-machine-token";
 const editorialToken = "dispatch-editorial-machine-token";
 
 const evidence = {
@@ -72,6 +74,7 @@ type Routes = {
   transition: (request: Request, context: { params: Promise<{ id: string }> }) => Promise<Response>;
   registerEvidence: (request: Request) => Promise<Response>;
   getEvidence: (request: Request, context: { params: Promise<{ id: string }> }) => Promise<Response>;
+  updateEvidence: (request: Request, context: { params: Promise<{ id: string }> }) => Promise<Response>;
   publicPublication: (request: Request, context: { params: Promise<{ slug: string }> }) => Promise<Response>;
   editorialList: (request: Request) => Promise<Response>;
   editorialPublication: (request: Request, context: { params: Promise<{ id: string }> }) => Promise<Response>;
@@ -134,6 +137,9 @@ function routeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Respo
   if (evidenceMatch && request.method === "GET") {
     return routes.getEvidence(request, { params: Promise.resolve({ id: evidenceMatch[1] }) });
   }
+  if (evidenceMatch && request.method === "PATCH") {
+    return routes.updateEvidence(request, { params: Promise.resolve({ id: evidenceMatch[1] }) });
+  }
   if (publicMatch && request.method === "GET") {
     return routes.publicPublication(request, { params: Promise.resolve({ slug: publicMatch[1] }) });
   }
@@ -171,6 +177,12 @@ beforeAll(async () => {
       roles: ["external-application"],
       tokenHash: hash(overwatchToken),
     },
+    {
+      applicationName: "mayday3",
+      subjectId: "mayday3-service",
+      roles: ["external-application"],
+      tokenHash: hash(mayday3Token),
+    },
   ]);
   delete process.env.MAYDAY_TRUST_DEV_HEADERS;
   restoreEnvironment = () => {
@@ -198,6 +210,7 @@ beforeAll(async () => {
     transition: lifecycle.POST,
     registerEvidence: evidenceRoutes.POST,
     getEvidence: evidenceById.GET,
+    updateEvidence: evidenceById.PATCH,
     publicPublication: publicPublication.GET,
     editorialList: editorialPublications.GET,
     editorialPublication: editorialPublication.GET,
@@ -802,5 +815,68 @@ describe("Research Studio HTTP to Dispatch SQLite integration", () => {
     expect(Object.keys(publicProjection.publication).sort()).toEqual(
       Object.keys(preview.publication).sort(),
     );
+  });
+
+  it("accepts Mayday3 evidence ingestion without granting publication authority", async () => {
+    const mayday3Client = new Mayday3EvidenceClient({
+      baseUrl: "https://dispatch.integration.test",
+      credential: { bearerToken: mayday3Token },
+      fetch: routeFetch as typeof fetch,
+    });
+    const evidenceId = "24242424-2424-4242-8242-242424242424";
+    const registered = await mayday3Client.registerEvidence({
+      id: evidenceId,
+      title: "Mayday3 processed public evidence",
+      mediaType: "application/pdf",
+      source: "Regional Authority",
+      sourceUrl: "https://example.org/mayday3-source",
+      provenance: "Mayday3 controlled evidence ingestion",
+      visibility: "public",
+      checksum: "f".repeat(64),
+      checksumAlgorithm: "sha256",
+      processor: "mayday3-pdf-normalizer",
+      status: "processing",
+      publicUrl: "https://example.org/mayday3-evidence",
+      acquisitionAt: "2026-09-25T12:00:00.000Z",
+      collectionId: "integration-evidence",
+    }, { idempotencyKey: "mayday3-register-1" });
+    expect(registered.evidence).toMatchObject({ version: 1, status: "processing" });
+    const ready = await mayday3Client.updateEvidenceProcessingState(evidenceId, {
+      expectedVersion: 1,
+      status: "ready",
+    });
+    expect(ready.evidence).toMatchObject({ version: 2, status: "ready" });
+    await expect(mayday3Client.updateEvidenceProcessingState(evidenceId, {
+      expectedVersion: 1,
+      status: "failed",
+      processingError: "Internal failure",
+    })).rejects.toMatchObject({ code: "STALE_VERSION" });
+
+    const researchClient = new ResearchStudioDispatchClient({
+      baseUrl: "https://dispatch.integration.test",
+      applicationName: "Research Studio",
+      credential: { bearerToken: researchStudioToken },
+      fetch: routeFetch as typeof fetch,
+    });
+    const draftWithMayday3Evidence = await researchClient.createDraft({
+      ...draft,
+      slug: "research-studio-mayday3-evidence",
+      origin: { ...draft.origin, stableObjectId: "research:mayday3-evidence:1" },
+      evidenceIds: [evidenceId],
+    });
+    expect(draftWithMayday3Evidence.publication.evidence).toMatchObject([
+      { id: evidenceId, processor: "mayday3-pdf-normalizer", evidenceVersion: 2 },
+    ]);
+    await expect(mayday3Client.updateEvidenceProcessingState(evidenceId, {
+      expectedVersion: 2,
+      status: "ready",
+    })).resolves.toBeDefined();
+    await expect(
+      routeFetch(`https://dispatch.integration.test/api/publications/${draftWithMayday3Evidence.publication.id}/transition`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${mayday3Token}`, "content-type": "application/json" },
+        body: JSON.stringify({ to: "review", expectedVersion: 1 }),
+      }),
+    ).resolves.toMatchObject({ status: 403 });
   });
 });

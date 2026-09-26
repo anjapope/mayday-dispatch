@@ -11,6 +11,11 @@ const researchActor: GatewayActor = {
 };
 const editorActor: GatewayActor = { subjectId: "editor-1", roles: ["editor"] };
 const publisherActor: GatewayActor = { subjectId: "publisher-1", roles: ["publisher"] };
+const mayday3Actor: GatewayActor = {
+  subjectId: "mayday3-service",
+  roles: ["external-application"],
+  originatingApplication: "mayday3",
+};
 
 const publicSource = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -26,9 +31,11 @@ const publicEvidence: RegisteredEvidence = {
   provenance: "Mayday3 evidence registration",
   visibility: "public",
   checksum: "a".repeat(64),
+  checksumAlgorithm: "sha256",
   status: "ready",
   publicUrl: "https://example.org/evidence/appendix",
   registeredAt: "2026-09-22T19:30:10.431Z",
+  version: 1,
 };
 const privateEvidence: RegisteredEvidence = {
   ...publicEvidence,
@@ -419,5 +426,18 @@ describe("PublicationGatewayService Phase Three", () => {
       action: "publication.archive",
       revisionType: "archive",
     });
+
+  });
+
+  it("restricts Mayday3 to Evidence Registry operations", async () => {
+    const { service } = createHarness();
+    await expect(
+      service.createDraft(researchDraft({
+        origin: {
+          ...researchDraft().origin,
+          originatingApplication: "mayday3",
+        },
+      }), mayday3Actor, context),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });

@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { CitationSchema, EvidenceVisibilitySchema } from "@/domain/publication";
-import { RegisteredEvidenceSchema } from "@/evidence/registry";
+import {
+  EvidenceProcessingStatusSchema,
+  RegisteredEvidenceSchema,
+} from "@/evidence/registry";
 
 /**
  * Registration request DTO for `POST /api/evidence`. This is the
@@ -27,16 +30,46 @@ export const RegisterEvidenceRequestSchema = z
     provenance: z.string().trim().min(1),
     visibility: EvidenceVisibilitySchema,
     checksum: z.string().regex(/^[a-fA-F0-9]{64}$/, "Use a SHA-256 checksum."),
+    checksumAlgorithm: z.literal("sha256").default("sha256"),
     processor: z.string().trim().min(1).optional(),
-    status: z.enum(["registered", "processing", "ready", "rejected"]),
+    status: EvidenceProcessingStatusSchema,
     publicUrl: z.string().url().optional(),
+    sourceUrl: z.string().url().optional(),
     locator: z.string().trim().min(1).optional(),
     citation: CitationSchema.optional(),
     registeredAt: z.string().datetime({ offset: true }).optional(),
+    acquisitionAt: z.string().datetime({ offset: true }).optional(),
+    processedAt: z.string().datetime({ offset: true }).optional(),
+    originalFilename: z.string().trim().min(1).refine(
+      (value) => !/[\\/]/.test(value),
+      "Original filenames must not contain filesystem paths.",
+    ).optional(),
+    collectionId: z.string().trim().min(1).optional(),
+    originalIdentifier: z.string().trim().min(1).optional(),
+    acquisitionMethod: z.string().trim().min(1).optional(),
+    provenanceNote: z.string().trim().min(1).optional(),
+    parentEvidenceId: z.string().uuid().optional(),
+    derivationType: z.string().trim().min(1).optional(),
+    supersededBy: z.string().uuid().optional(),
+    processingError: z.string().trim().min(1).optional(),
   })
   .strict();
 
 export type RegisterEvidenceRequest = z.infer<typeof RegisterEvidenceRequestSchema>;
+
+export const UpdateEvidenceRequestSchema = RegisterEvidenceRequestSchema
+  .omit({ id: true, registeredAt: true })
+  .partial()
+  .extend({
+    expectedVersion: z.number().int().positive(),
+  })
+  .strict()
+  .refine(
+    (request) => Object.keys(request).some((key) => key !== "expectedVersion"),
+    "At least one evidence field must be provided.",
+  );
+
+export type UpdateEvidenceRequest = z.infer<typeof UpdateEvidenceRequestSchema>;
 
 export const EvidenceGatewayResponseSchema = z
   .object({

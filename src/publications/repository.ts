@@ -10,6 +10,7 @@ import {
 } from "@/domain/publication";
 import {
   RegisteredEvidenceSchema,
+  type EvidenceSaveOptions,
   type EvidenceRegistry,
   type RegisteredEvidence,
 } from "@/evidence/registry";
@@ -70,6 +71,12 @@ export class RepositoryPersistenceError extends Error {
   constructor(readonly operation: string, options?: ErrorOptions) {
     super("Publication persistence failed.", options);
     this.name = "RepositoryPersistenceError";
+  }
+}
+
+export class EvidenceConcurrencyError extends Error {
+  constructor(readonly expectedVersion: number, readonly actualVersion: number | undefined) {
+    super("Evidence version does not match the persisted version.");
   }
 }
 
@@ -270,10 +277,24 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
     };
   }
 
-  async register(evidence: RegisteredEvidence): Promise<RegisteredEvidence> {
+  async register(evidence: RegisteredEvidence, options?: EvidenceSaveOptions): Promise<RegisteredEvidence> {
     const item = RegisteredEvidenceSchema.parse(evidence);
     this.database.exec("BEGIN IMMEDIATE");
     try {
+      const existing = this.database
+        .prepare("SELECT id FROM evidence_references WHERE id = ?")
+        .get(item.id);
+      if (existing) {
+        throw new RepositoryPersistenceError("duplicateEvidence");
+      }
+      if (item.parentEvidenceId) {
+        const parent = this.database
+          .prepare("SELECT 1 FROM evidence_references WHERE id = ?")
+          .get(item.parentEvidenceId);
+        if (!parent) {
+          throw new RepositoryPersistenceError("parentEvidence");
+        }
+      }
       if (item.citation) {
         this.upsertCitation(item.citation);
       }
@@ -281,8 +302,11 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
         .prepare(`
           INSERT INTO evidence_references (
             id, title, description, media_type, source, provenance, visibility, checksum,
-            processor, status, public_url, locator, citation_id, registered_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            processor, status, public_url, locator, citation_id, registered_at, current_version,
+            checksum_algorithm, source_url, acquisition_at, processed_at, original_filename,
+            collection_id, original_identifier, acquisition_method, provenance_note,
+            parent_evidence_id, derivation_type, superseded_by, processing_error
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
           item.id,
@@ -299,7 +323,28 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
           item.locator ?? null,
           item.citation?.id ?? null,
           item.registeredAt,
+          item.version,
+          item.checksumAlgorithm,
+          item.sourceUrl ?? null,
+          item.acquisitionAt ?? null,
+          item.processedAt ?? null,
+          item.originalFilename ?? null,
+          item.collectionId ?? null,
+          item.originalIdentifier ?? null,
+          item.acquisitionMethod ?? null,
+          item.provenanceNote ?? null,
+          item.parentEvidenceId ?? null,
+          item.derivationType ?? null,
+          item.supersededBy ?? null,
+          item.processingError ?? null,
         );
+      this.writeEvidenceRevision(item);
+      if (options?.audit) {
+        this.writeEvidenceAudit(options.audit);
+      }
+      if (options?.idempotency) {
+        this.writeEvidenceIdempotency(item, options.idempotency);
+      }
       this.database.exec("COMMIT");
       return structuredClone(item);
     } catch (error) {
@@ -325,13 +370,139 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
       provenance: String(row.provenance),
       visibility: String(row.visibility),
       checksum: String(row.checksum),
+      checksumAlgorithm: String(row.checksum_algorithm),
       processor: row.processor ? String(row.processor) : undefined,
       status: String(row.status),
       publicUrl: row.public_url ? String(row.public_url) : undefined,
+      sourceUrl: row.source_url ? String(row.source_url) : undefined,
       locator: row.locator ? String(row.locator) : undefined,
       citation,
       registeredAt: String(row.registered_at),
+      version: Number(row.current_version),
+      acquisitionAt: row.acquisition_at ? String(row.acquisition_at) : undefined,
+      processedAt: row.processed_at ? String(row.processed_at) : undefined,
+      originalFilename: row.original_filename ? String(row.original_filename) : undefined,
+      collectionId: row.collection_id ? String(row.collection_id) : undefined,
+      originalIdentifier: row.original_identifier ? String(row.original_identifier) : undefined,
+      acquisitionMethod: row.acquisition_method ? String(row.acquisition_method) : undefined,
+      provenanceNote: row.provenance_note ? String(row.provenance_note) : undefined,
+      parentEvidenceId: row.parent_evidence_id ? String(row.parent_evidence_id) : undefined,
+      derivationType: row.derivation_type ? String(row.derivation_type) : undefined,
+      supersededBy: row.superseded_by ? String(row.superseded_by) : undefined,
+      processingError: row.processing_error ? String(row.processing_error) : undefined,
     });
+  }
+
+  async updateEvidence(
+    evidence: RegisteredEvidence,
+    expectedVersion: number,
+    options?: EvidenceSaveOptions,
+  ): Promise<RegisteredEvidence> {
+    const item = RegisteredEvidenceSchema.parse(evidence);
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const current = this.database
+        .prepare("SELECT current_version FROM evidence_references WHERE id = ?")
+        .get(item.id) as SqliteRow | undefined;
+      const actualVersion = current ? Number(current.current_version) : undefined;
+      if (!current || actualVersion !== expectedVersion) {
+        throw new EvidenceConcurrencyError(expectedVersion, actualVersion);
+      }
+      if (item.parentEvidenceId) {
+        const parent = this.database.prepare("SELECT 1 FROM evidence_references WHERE id = ?")
+          .get(item.parentEvidenceId);
+        if (!parent) {
+          throw new RepositoryPersistenceError("parentEvidence");
+        }
+      }
+      if (item.citation) {
+        this.upsertCitation(item.citation);
+      }
+      this.database.prepare(`
+        UPDATE evidence_references SET
+          title = ?, description = ?, media_type = ?, source = ?, provenance = ?,
+          visibility = ?, checksum = ?, checksum_algorithm = ?, processor = ?, status = ?,
+          public_url = ?, source_url = ?, locator = ?, citation_id = ?, current_version = ?,
+          acquisition_at = ?, processed_at = ?, original_filename = ?, collection_id = ?,
+          original_identifier = ?, acquisition_method = ?, provenance_note = ?,
+          parent_evidence_id = ?, derivation_type = ?, superseded_by = ?, processing_error = ?
+        WHERE id = ?
+      `).run(
+        item.title, item.description ?? null, item.mediaType, item.source, item.provenance,
+        item.visibility, item.checksum.toLowerCase(), item.checksumAlgorithm, item.processor ?? null,
+        item.status, item.publicUrl ?? null, item.sourceUrl ?? null, item.locator ?? null,
+        item.citation?.id ?? null, item.version, item.acquisitionAt ?? null, item.processedAt ?? null,
+        item.originalFilename ?? null, item.collectionId ?? null, item.originalIdentifier ?? null,
+        item.acquisitionMethod ?? null, item.provenanceNote ?? null, item.parentEvidenceId ?? null,
+        item.derivationType ?? null, item.supersededBy ?? null, item.processingError ?? null, item.id,
+      );
+      this.writeEvidenceRevision(item);
+      if (options?.audit) {
+        this.writeEvidenceAudit(options.audit);
+      }
+      this.database.exec("COMMIT");
+      return structuredClone(item);
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      if (error instanceof EvidenceConcurrencyError || error instanceof RepositoryPersistenceError) {
+        throw error;
+      }
+      throw new RepositoryPersistenceError("updateEvidence", { cause: error });
+    }
+  }
+
+  async findEvidenceIdempotency(actorScope: string, key: string): Promise<RegisteredEvidence | undefined> {
+    const row = this.database.prepare(`
+      SELECT response_json FROM evidence_idempotency_keys
+      WHERE actor_scope = ? AND idempotency_key = ?
+    `).get(actorScope, key) as SqliteRow | undefined;
+    return row ? RegisteredEvidenceSchema.parse(JSON.parse(String(row.response_json))) : undefined;
+  }
+
+  async listEvidenceHistory(id: string): Promise<RegisteredEvidence[]> {
+    return this.database.prepare(`
+      SELECT snapshot_json FROM evidence_revisions WHERE evidence_id = ? ORDER BY version
+    `).all(id).map((row) => RegisteredEvidenceSchema.parse(JSON.parse(String(row.snapshot_json))));
+  }
+
+  private writeEvidenceRevision(evidence: RegisteredEvidence): void {
+    this.database.prepare(`
+      INSERT INTO evidence_revisions (evidence_id, version, previous_version, updated_at, snapshot_json)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      evidence.id,
+      evidence.version,
+      evidence.version === 1 ? null : evidence.version - 1,
+      evidence.processedAt ?? evidence.registeredAt,
+      JSON.stringify(evidence),
+    );
+  }
+
+  private writeEvidenceAudit(event: NonNullable<EvidenceSaveOptions["audit"]>): void {
+    this.database.prepare(`
+      INSERT INTO evidence_audit_events (
+        id, timestamp, actor_subject, actor_application, action, evidence_id,
+        previous_version, resulting_version, outcome, correlation_id, request_id, error_code
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      event.id, event.timestamp, event.actorSubject, event.actorApplication ?? null, event.action,
+      event.evidenceId, event.previousVersion ?? null, event.resultingVersion ?? null, event.outcome,
+      event.correlationId, event.requestId, event.errorCode ?? null,
+    );
+  }
+
+  private writeEvidenceIdempotency(
+    evidence: RegisteredEvidence,
+    idempotency: NonNullable<EvidenceSaveOptions["idempotency"]>,
+  ): void {
+    this.database.prepare(`
+      INSERT INTO evidence_idempotency_keys (
+        actor_scope, idempotency_key, request_hash, evidence_id, resulting_version, response_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      idempotency.actorScope, idempotency.key, idempotency.requestHash, evidence.id,
+      evidence.version, JSON.stringify(evidence), idempotency.createdAt,
+    );
   }
 
   async save(publication: Publication, options: SavePublicationOptions): Promise<Publication> {
@@ -497,6 +668,12 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
         checksum: String(evidence.checksum),
         processor: evidence.processor ? String(evidence.processor) : undefined,
         status: String(evidence.status),
+        evidenceVersion: Number(evidence.current_version),
+        checksumAlgorithm: String(evidence.checksum_algorithm),
+        acquisitionAt: evidence.acquisition_at ? String(evidence.acquisition_at) : undefined,
+        processedAt: evidence.processed_at ? String(evidence.processed_at) : undefined,
+        parentEvidenceId: evidence.parent_evidence_id ? String(evidence.parent_evidence_id) : undefined,
+        derivationType: evidence.derivation_type ? String(evidence.derivation_type) : undefined,
         url: evidence.public_url ? String(evidence.public_url) : undefined,
         locator: evidence.locator ? String(evidence.locator) : undefined,
         citation: evidence.citation_id

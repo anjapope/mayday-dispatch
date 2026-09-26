@@ -26,7 +26,7 @@ export async function POST(request: Request) {
         requestId: context.requestId,
         application: actor?.originatingApplication,
       },
-      () => getEvidenceGatewayService().register(actor, body as never),
+      () => getEvidenceGatewayService().register(actor, body as never, context),
       undefined,
       (result) => result.id,
     );

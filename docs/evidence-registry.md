@@ -6,7 +6,8 @@ uploads and does not run evidence processors.
 ## HTTP API
 
 `POST /api/evidence` registers metadata and returns HTTP 201. `GET
-/api/evidence/:id` retrieves a registered item. Both are authenticated,
+/api/evidence/:id` retrieves a registered item. `PATCH /api/evidence/:id`
+requires `expectedVersion` and creates a durable evidence revision. All are authenticated,
 controlled integration routes; registration and retrieval do not publish
 evidence or associate it with a publication. Association is the separately
 authorized `POST /api/publications/:id/evidence` route. External applications
@@ -36,17 +37,18 @@ may associate only `public` or `citation-only` evidence.
 }
 ```
 
-Statuses are `registered`, `processing`, `ready`, and `rejected`. Rejected or
-unknown IDs cannot be associated. Public evidence needs `publicUrl` or a
+Statuses are `registered`, `processing`, `ready`, `failed`, `rejected`, and
+`superseded`. Only `ready` IDs can be associated. Public evidence needs `publicUrl` or a
 citation; citation-only evidence needs a citation.
 
 ## Mayday3 contract
 
 Mayday3 owns acquisition, checksum calculation, content storage, malware/content
 processing, status transitions, and registry insertion. It must register the
-DTO above before sending an evidence ID to Dispatch. IDs and checksums are
-immutable; metadata corrections create an explicit registry revision outside
-Dispatch. Dispatch stores a metadata snapshot plus the stable ID.
+DTO above before sending an evidence ID to Dispatch. IDs remain stable. Processing/provenance metadata changes require a current
+evidence version and create an explicit evidence revision and audit event.
+Checksums remain internal integrity metadata. Dispatch stores a metadata
+snapshot plus the stable ID.
 
 No Mayday3 worker, webhook, polling loop, queue consumer, upload endpoint, or
 processor integration is implemented in this phase.

@@ -172,6 +172,7 @@ export class PublicationGatewayService {
     context = defaultContext(this.idFactory),
   ): Promise<GatewayPublicationResponse> {
     const request = parseRequest(CreateDraftPublicationRequestSchema, input);
+    this.assertMayday3EvidenceOnly(actor);
     this.authorization.assertCan("createDraft", actor);
     this.assertExternalApplicationMatchesOrigin(actor, request);
     const idempotency = await this.resolveIdempotency(request, actor, context);
@@ -283,6 +284,7 @@ export class PublicationGatewayService {
     context = defaultContext(this.idFactory),
   ): Promise<GatewayPublicationResponse> {
     const request = parseRequest(UpdatePublicationRequestSchema, input);
+    this.assertMayday3EvidenceOnly(actor);
     const publication = await this.requirePublication(id);
     this.authorization.assertCan("update", actor, publication);
     this.assertExpectedVersion(request.expectedVersion, publication);
@@ -398,6 +400,7 @@ export class PublicationGatewayService {
     context = defaultContext(this.idFactory),
   ): Promise<GatewayPublicationResponse> {
     const request = parseRequest(AttachEvidenceRequestSchema, input);
+    this.assertMayday3EvidenceOnly(actor);
     const publication = await this.requirePublication(id);
     this.authorization.assertCan("attachEvidence", actor, publication);
     this.assertExpectedVersion(request.expectedVersion, publication);
@@ -549,7 +552,7 @@ export class PublicationGatewayService {
     const evidence: RegisteredEvidence[] = [];
     for (const id of ids) {
       const registered = await this.evidenceRegistry.getRegisteredEvidence(id);
-      if (!registered || registered.status === "rejected") {
+      if (!registered || registered.status !== "ready") {
         throw new GatewayError(
           "EVIDENCE_NOT_REGISTERED",
           "Evidence must be registered and usable before association.",
@@ -585,7 +588,15 @@ export class PublicationGatewayService {
     evidenceProvenance: evidence.provenance,
     checksum: evidence.checksum,
     processor: evidence.processor,
-    status: evidence.status,
+    status: evidence.status === "failed" || evidence.status === "superseded"
+      ? "rejected"
+      : evidence.status,
+    evidenceVersion: evidence.version,
+    checksumAlgorithm: evidence.checksumAlgorithm,
+    acquisitionAt: evidence.acquisitionAt,
+    processedAt: evidence.processedAt,
+    parentEvidenceId: evidence.parentEvidenceId,
+    derivationType: evidence.derivationType,
     citation: evidence.citation,
   });
 
@@ -756,6 +767,15 @@ export class PublicationGatewayService {
 
   private actorScope(actor: GatewayActor | undefined): string {
     return `${actor?.originatingApplication ?? "-"}:${actor?.subjectId ?? "anonymous"}`;
+  }
+
+  private assertMayday3EvidenceOnly(actor: GatewayActor | undefined): void {
+    if (actor?.originatingApplication === "mayday3") {
+      throw new GatewayError(
+        "FORBIDDEN",
+        "Mayday3 is restricted to controlled Evidence Registry operations.",
+      );
+    }
   }
 
   private assertExternalSynchronizationIsUnlocked(

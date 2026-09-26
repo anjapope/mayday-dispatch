@@ -1,7 +1,9 @@
 # Mayday Dispatch
 
 Mayday Dispatch is a domain-first publishing service for evidence-led research,
-OSINT reports, and operational dispatches. Phase Six completes Dispatch's
+OSINT reports, and operational dispatches. Phase Seven makes Mayday3 a
+controlled, versioned evidence provider while preserving Dispatch's editorial
+authority. Phase Six completes Dispatch's
 editorial control room: authenticated intake and review, versioned editorial
 changes, readiness-gated publication, public-safe previews, durable audit and
 revision history, corrections, substantive updates, and archival. Research
@@ -73,6 +75,10 @@ Publication lifecycle operations are documented in
 - Corrections, substantive updates, lifecycle transitions, and archives are
   distinct revision/audit events. Archives retain history and have no hard
   delete or withdrawal workflow.
+- Mayday3 can register and version processed evidence metadata only. It cannot
+  publish, alter editorial content, transition publications, or expose private
+  evidence. Evidence associations remain separate, authorized publication
+  operations.
 
 The Node `node:sqlite` API is experimental. This phase targets Node runtimes
 that provide `DatabaseSync` (Node 22.5+) and retains the repository
@@ -82,6 +88,8 @@ See [architecture](docs/architecture.md), [gateway](docs/gateway.md),
 [publication contract](docs/publication-contract.md),
 [persistence](docs/persistence.md), [audit](docs/audit.md),
 [evidence registry](docs/evidence-registry.md),
+[Mayday3 integration](docs/mayday3-integration.md),
+[evidence provenance](docs/evidence-provenance.md),
 [service authentication](docs/service-authentication.md),
 [operations](docs/operations.md), and
 [Research Studio integration](docs/research-studio-integration.md), and

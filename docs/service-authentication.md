@@ -22,6 +22,10 @@ Configure Overwatch as its own credential record with `applicationName` set to
 `overwatch`. Do not reuse Research Studio credentials: the resolved
 application identity is also used to enforce origin ownership.
 
+Configure Mayday3 separately with `applicationName` set to `mayday3`. Mayday3
+credentials authorize controlled evidence registration/update only; they do
+not confer publication, editorial, or lifecycle authority.
+
 Authentication proves the calling application and creates `GatewayActor`.
 Authorization remains a separate `PublicationAuthorizationPolicy` or
 `EvidenceAuthorizationPolicy` decision. Development identity headers are

@@ -10,6 +10,8 @@ Research Studio -> machine authentication -> App Router -> publication gateway
                                               |
                                       SQLite transaction
                        publication/revision/links/history/audit/idempotency
+                                              |
+                                  EvidenceRegistry / Mayday3 metadata
 ```
 
 The Phase One domain in `src/domain/publication.ts` remains the canonical
@@ -32,7 +34,9 @@ client under `src/integrations/research-studio`.
   mutation includes its revision, relationships, lifecycle history when
   changed, audit event, and optional idempotency record.
 - `EvidenceRegistry` proves that evidence metadata was registered elsewhere.
-  Dispatch stores references and never processes uploads.
+  Dispatch stores references and never processes uploads. Mayday3 registers
+  controlled metadata through the same registry, with evidence revisions,
+  lineage, idempotency, and evidence audit records.
 - Operational logs are transient structured entries; durable audit events
   remain part of publication transactions and publication history.
 

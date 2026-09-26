@@ -1,7 +1,7 @@
 import type { GatewayActor } from "@/application/publication-gateway/authorization";
 import { GatewayError } from "@/application/publication-gateway/errors";
 
-export type EvidenceGatewayAction = "register" | "retrieve";
+export type EvidenceGatewayAction = "register" | "retrieve" | "update";
 
 export interface EvidenceAuthorizationPolicy {
   assertCan(action: EvidenceGatewayAction, actor: GatewayActor | undefined): void;
@@ -24,7 +24,7 @@ export class RoleBasedEvidenceAuthorizationPolicy implements EvidenceAuthorizati
       return;
     }
     if (
-      action === "register" &&
+      (action === "register" || action === "update") &&
       actor.roles.some((role) => role === "editor" || role === "publisher" || role === "external-application")
     ) {
       return;

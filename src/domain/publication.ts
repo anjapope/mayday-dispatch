@@ -77,6 +77,12 @@ export const EvidenceReferenceSchema = z
     checksum: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
     processor: z.string().trim().min(1).optional(),
     status: z.enum(["registered", "processing", "ready", "rejected"]).optional(),
+    evidenceVersion: z.number().int().positive().optional(),
+    checksumAlgorithm: z.literal("sha256").optional(),
+    acquisitionAt: z.string().datetime({ offset: true }).optional(),
+    processedAt: z.string().datetime({ offset: true }).optional(),
+    parentEvidenceId: z.string().uuid().optional(),
+    derivationType: z.string().trim().min(1).optional(),
     citation: CitationSchema.optional(),
   })
   .superRefine((evidence, context) => {

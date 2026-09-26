@@ -16,6 +16,12 @@ Operational logs are transient observability records and are separate from
 durable publication audit events. Audit events are written atomically with
 successful publication mutations and remain the publication-history record.
 
+Mayday3 evidence registration and update routes produce separate structured
+operational events with evidence ID, authenticated application, correlation/
+request IDs, duration, outcome, and stable failure code. Durable evidence
+audit rows record actor, action, versions, and request context but never raw
+evidence content, checksums in logs, or credentials.
+
 Run `npm run db:migrate` before application startup. This phase uses Node's
 experimental `node:sqlite` `DatabaseSync` API and targets Node 22.5 or newer.
 The SQLite driver warning is expected; callers use the repository abstraction,
