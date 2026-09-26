@@ -7,10 +7,11 @@ import {
 import {
   RegisterEvidenceRequestSchema,
   UpdateEvidenceRequestSchema,
+  EvidenceSearchQuerySchema,
   type RegisterEvidenceRequest,
   type UpdateEvidenceRequest,
 } from "@/application/evidence-gateway/dto";
-import type { EvidenceRegistry, RegisteredEvidence } from "@/evidence/registry";
+import type { EvidenceDetail, EvidenceRegistry, RegisteredEvidence } from "@/evidence/registry";
 import type { GatewayRequestContext } from "@/application/publication-gateway/service";
 import { EvidenceConcurrencyError, RepositoryPersistenceError } from "@/publications/repository";
 
@@ -102,6 +103,68 @@ export class EvidenceGatewayService {
     return evidence;
   }
 
+  async retrieveDetail(
+    actor: GatewayActor | undefined,
+    id: string,
+  ): Promise<EvidenceDetail> {
+    this.authorization.assertCan("retrieve", actor);
+    const detail = await this.registry.getEvidenceDetail?.(id);
+    if (!detail) {
+      const evidence = await this.retrieve(actor, id);
+      return {
+        evidence,
+        relatedEvidence: [],
+        possibleDuplicates: [],
+        revisionHistory: [],
+        auditHistory: [],
+        publicationUses: [],
+      };
+    }
+    if (this.isEditorialActor(actor) || actor?.originatingApplication === "mayday3") {
+      return detail;
+    }
+    if (detail.evidence.visibility !== "public" && detail.evidence.visibility !== "citation-only") {
+      throw new GatewayError("FORBIDDEN", "The actor is not permitted to inspect this evidence.");
+    }
+    return {
+      ...detail,
+      relatedEvidence: detail.relatedEvidence,
+      possibleDuplicates: [],
+      auditHistory: [],
+      revisionHistory: detail.revisionHistory,
+      publicationUses: detail.publicationUses.filter((item) =>
+        item.visibility === "public" && (item.lifecycleState === "published" || item.lifecycleState === "updated"),
+      ),
+    };
+  }
+
+  async search(
+    actor: GatewayActor | undefined,
+    input: unknown,
+  ) {
+    this.authorization.assertCan("search", actor);
+    const query = EvidenceSearchQuerySchema.safeParse(input);
+    if (!query.success) {
+      throw new GatewayError("VALIDATION_FAILED", "Evidence search request failed validation.", {
+        issues: query.error.issues,
+      });
+    }
+    if (actor?.originatingApplication === "mayday3" && !query.data.checksum) {
+      throw new GatewayError("FORBIDDEN", "Mayday3 evidence discovery is limited to checksum lookup.");
+    }
+    if (!this.registry.searchEvidence) {
+      throw new GatewayError("PERSISTENCE_FAILURE", "Evidence discovery is not supported by this registry.");
+    }
+    const result = await this.registry.searchEvidence(query.data);
+    const evidence = actor?.roles.includes("editor") || actor?.roles.includes("publisher") ||
+      actor?.roles.includes("admin")
+      ? result.evidence
+      : result.evidence.filter((item) =>
+        item.visibility === "public" || item.visibility === "citation-only",
+      );
+    return { evidence, nextCursor: result.nextCursor };
+  }
+
   async update(
     id: string,
     actor: GatewayActor | undefined,
@@ -174,6 +237,10 @@ export class EvidenceGatewayService {
 
   private actorScope(actor: GatewayActor | undefined): string {
     return `${actor?.originatingApplication ?? "-"}:${actor?.subjectId ?? "anonymous"}`;
+  }
+
+  private isEditorialActor(actor: GatewayActor | undefined): boolean {
+    return Boolean(actor?.roles.some((role) => role === "editor" || role === "publisher" || role === "admin"));
   }
 
   private defaultContext(): GatewayRequestContext {

@@ -105,6 +105,55 @@ export type EvidenceSaveOptions = {
   };
 };
 
+export type EvidenceSearchQuery = {
+  query?: string;
+  mediaType?: string;
+  processingState?: z.infer<typeof EvidenceProcessingStatusSchema>;
+  visibility?: z.infer<typeof EvidenceVisibilitySchema>;
+  processor?: string;
+  source?: string;
+  collectionId?: string;
+  parentEvidenceId?: string;
+  derivationType?: string;
+  fromDate?: string;
+  toDate?: string;
+  checksum?: string;
+  limit: number;
+  cursor?: string;
+};
+
+export type EvidenceSearchResult = {
+  evidence: RegisteredEvidence[];
+  nextCursor?: string;
+};
+
+export type EvidenceRelationshipType =
+  | "parent" | "derivative" | "supersedes" | "superseded-by"
+  | "same-checksum" | "same-collection" | "same-source-identifier";
+
+export type RelatedEvidence = {
+  evidenceId: string;
+  relationship: EvidenceRelationshipType;
+};
+
+export type EvidencePublicationUse = {
+  publicationId: string;
+  title: string;
+  lifecycleState: string;
+  publicationType: string;
+  associatedAt?: string;
+  visibility: string;
+};
+
+export type EvidenceDetail = {
+  evidence: RegisteredEvidence;
+  relatedEvidence: RelatedEvidence[];
+  possibleDuplicates: Array<{ evidenceId: string; reason: "same-checksum" | "same-source-identifier" | "same-source-url" }>;
+  revisionHistory: Array<{ version: number; updatedAt: string }>;
+  auditHistory: Array<Pick<EvidenceAuditEvent, "timestamp" | "action" | "outcome" | "resultingVersion">>;
+  publicationUses: EvidencePublicationUse[];
+};
+
 export interface EvidenceRegistry {
   getRegisteredEvidence(id: string): Promise<RegisteredEvidence | undefined>;
   register(evidence: RegisteredEvidence, options?: EvidenceSaveOptions): Promise<RegisteredEvidence>;
@@ -118,6 +167,8 @@ export interface EvidenceRegistry {
     key: string,
   ): Promise<RegisteredEvidence | undefined>;
   listEvidenceHistory?(id: string): Promise<RegisteredEvidence[]>;
+  searchEvidence?(query: EvidenceSearchQuery): Promise<EvidenceSearchResult>;
+  getEvidenceDetail?(id: string): Promise<EvidenceDetail | undefined>;
 }
 
 export class InMemoryEvidenceRegistry implements EvidenceRegistry {
@@ -169,5 +220,17 @@ export class InMemoryEvidenceRegistry implements EvidenceRegistry {
   async findEvidenceIdempotency(actorScope: string, key: string): Promise<RegisteredEvidence | undefined> {
     const evidence = this.idempotency.get(`${actorScope}:${key}`);
     return evidence ? structuredClone(evidence) : undefined;
+  }
+
+  async searchEvidence(query: EvidenceSearchQuery): Promise<EvidenceSearchResult> {
+    const matches = Array.from(this.evidence.values())
+      .filter((item) => !query.checksum || item.checksum.toLowerCase() === query.checksum.toLowerCase())
+      .filter((item) => !query.parentEvidenceId || item.parentEvidenceId === query.parentEvidenceId)
+      .filter((item) => !query.derivationType || item.derivationType === query.derivationType)
+      .filter((item) => !query.visibility || item.visibility === query.visibility)
+      .sort((left, right) => left.id.localeCompare(right.id));
+    const afterCursor = query.cursor ? matches.filter((item) => item.id > query.cursor!) : matches;
+    const evidence = afterCursor.slice(0, query.limit).map((item) => structuredClone(item));
+    return { evidence, nextCursor: afterCursor.length > query.limit ? evidence.at(-1)?.id : undefined };
   }
 }

@@ -36,3 +36,25 @@ export async function POST(request: Request) {
     return gatewayErrorResponse(error, context);
   }
 }
+
+export async function GET(request: Request) {
+  const context = requestContextFromRequest(request);
+  try {
+    const actor = await actorFromRequest(request);
+    const parameters = Object.fromEntries(new URL(request.url).searchParams.entries());
+    const result = await withOperationalLog(
+      {
+        operation: "evidence.search",
+        correlationId: context.correlationId,
+        requestId: context.requestId,
+        application: actor?.originatingApplication,
+      },
+      () => getEvidenceGatewayService().search(actor, parameters),
+      undefined,
+      (value) => `${value.evidence.length} results`,
+    );
+    return jsonResponse({ ...result, correlationId: context.correlationId }, 200, context);
+  } catch (error) {
+    return gatewayErrorResponse(error, context);
+  }
+}

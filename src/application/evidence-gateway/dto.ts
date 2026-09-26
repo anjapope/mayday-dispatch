@@ -71,6 +71,32 @@ export const UpdateEvidenceRequestSchema = RegisterEvidenceRequestSchema
 
 export type UpdateEvidenceRequest = z.infer<typeof UpdateEvidenceRequestSchema>;
 
+export const EvidenceSearchQuerySchema = z.object({
+  query: z.string().trim().min(1).max(200).optional(),
+  mediaType: z.string().trim().min(1).max(100).optional(),
+  processingState: EvidenceProcessingStatusSchema.optional(),
+  visibility: EvidenceVisibilitySchema.optional(),
+  processor: z.string().trim().min(1).max(100).optional(),
+  source: z.string().trim().min(1).max(200).optional(),
+  collectionId: z.string().trim().min(1).max(200).optional(),
+  parentEvidenceId: z.string().uuid().optional(),
+  derivationType: z.string().trim().min(1).max(100).optional(),
+  fromDate: z.string().datetime({ offset: true }).optional(),
+  toDate: z.string().datetime({ offset: true }).optional(),
+  checksum: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  cursor: z.string().uuid().optional(),
+}).strict();
+
+export type EvidenceSearchQuery = z.infer<typeof EvidenceSearchQuerySchema>;
+
+export const EvidenceSearchResponseSchema = z.object({
+  evidence: z.array(RegisteredEvidenceSchema),
+  nextCursor: z.string().uuid().optional(),
+  correlationId: z.string().min(1),
+}).strict();
+export type EvidenceSearchResponse = z.infer<typeof EvidenceSearchResponseSchema>;
+
 export const EvidenceGatewayResponseSchema = z
   .object({
     evidence: RegisteredEvidenceSchema,
@@ -79,3 +105,25 @@ export const EvidenceGatewayResponseSchema = z
   .strict();
 
 export type EvidenceGatewayResponse = z.infer<typeof EvidenceGatewayResponseSchema>;
+
+export const EvidenceDetailResponseSchema = z.object({
+  evidence: RegisteredEvidenceSchema,
+  relatedEvidence: z.array(z.object({
+    evidenceId: z.string().uuid(),
+    relationship: z.enum(["parent", "derivative", "supersedes", "superseded-by", "same-checksum", "same-collection", "same-source-identifier"]),
+  }).strict()),
+  possibleDuplicates: z.array(z.object({
+    evidenceId: z.string().uuid(),
+    reason: z.enum(["same-checksum", "same-source-identifier", "same-source-url"]),
+  }).strict()),
+  revisionHistory: z.array(z.object({ version: z.number().int(), updatedAt: z.string() }).strict()),
+  auditHistory: z.array(z.object({
+    timestamp: z.string(), action: z.string(), outcome: z.string(), resultingVersion: z.number().int().optional(),
+  }).strict()),
+  publicationUses: z.array(z.object({
+    publicationId: z.string().uuid(), title: z.string(), lifecycleState: z.string(),
+    publicationType: z.string(), associatedAt: z.string().optional(), visibility: z.string(),
+  }).strict()),
+  correlationId: z.string().min(1),
+}).strict();
+export type EvidenceDetailResponse = z.infer<typeof EvidenceDetailResponseSchema>;

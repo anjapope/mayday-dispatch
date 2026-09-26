@@ -5,6 +5,7 @@ import { getPublicationGatewayService } from "@/application/publication-gateway/
 import { getPublicationRepository } from "@/publications/repository";
 import { headers } from "next/headers";
 import { EditorialControls } from "./editorial-controls";
+import { EvidenceAssociation } from "./evidence-association";
 
 type Props = { params: Promise<{ id: string }> };
 export const dynamic = "force-dynamic";
@@ -65,6 +66,7 @@ export default async function EditorialPublicationPage({ params }: Props) {
           ? publication.extensions.caveat
           : undefined}
       />
+      <EvidenceAssociation publicationId={publication.id} version={publication.revision.version} />
       <section className="editorial-panel" aria-labelledby="readiness-heading">
         <h2 id="readiness-heading">Readiness</h2>
         <p>{readiness.ready ? "No blocking findings." : "Publishing is blocked until errors are resolved."}</p>
@@ -105,7 +107,7 @@ export default async function EditorialPublicationPage({ params }: Props) {
         <ul className="evidence-list">
           {publication.evidence.map((evidence) => (
             <li key={evidence.id}>
-              <strong>{evidence.title}</strong> — <strong>{evidence.visibility}</strong>
+              <strong><Link href={`/editorial/evidence/${evidence.id}`}>{evidence.title}</Link></strong> — <strong>{evidence.visibility}</strong>
               <dl className="metadata">
                 <div><dt>Evidence ID</dt><dd>{evidence.id}</dd></div>
                 <div><dt>Version</dt><dd>v{evidence.evidenceVersion ?? 1}</dd></div>

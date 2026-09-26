@@ -1,7 +1,7 @@
 import type { GatewayActor } from "@/application/publication-gateway/authorization";
 import { GatewayError } from "@/application/publication-gateway/errors";
 
-export type EvidenceGatewayAction = "register" | "retrieve" | "update";
+export type EvidenceGatewayAction = "register" | "retrieve" | "update" | "search";
 
 export interface EvidenceAuthorizationPolicy {
   assertCan(action: EvidenceGatewayAction, actor: GatewayActor | undefined): void;
@@ -29,7 +29,7 @@ export class RoleBasedEvidenceAuthorizationPolicy implements EvidenceAuthorizati
     ) {
       return;
     }
-    if (action === "retrieve" && actor.roles.some((role) => role !== "public-reader")) {
+    if ((action === "retrieve" || action === "search") && actor.roles.some((role) => role !== "public-reader")) {
       return;
     }
     throw new GatewayError("FORBIDDEN", "The actor is not allowed to perform this action.");

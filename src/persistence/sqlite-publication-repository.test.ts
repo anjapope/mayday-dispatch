@@ -104,7 +104,7 @@ describe("SqlitePublicationRepository", () => {
     );
     expect(
       repository.database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get(),
-    ).toMatchObject({ count: 4 });
+    ).toMatchObject({ count: 5 });
     repository.close();
   });
 
@@ -231,6 +231,32 @@ describe("SqlitePublicationRepository", () => {
         context,
       ),
     ).rejects.toMatchObject({ code: "STALE_VERSION" });
+    repository.close();
+  });
+
+  it("searches evidence with deterministic cursors and structured filters", async () => {
+    const repository = new SqlitePublicationRepository(databasePath());
+    await repository.register(evidence);
+    await repository.register({
+      ...evidence,
+      id: "99999999-9999-4999-8999-999999999998",
+      title: "OCR derivative",
+      visibility: "internal",
+      publicUrl: undefined,
+      version: 1,
+      parentEvidenceId: evidence.id,
+      derivationType: "ocr-text",
+      collectionId: "persistence-test",
+    });
+    const first = await repository.searchEvidence({ limit: 1, mediaType: "text/csv" });
+    expect(first.evidence).toHaveLength(1);
+    expect(first.nextCursor).toBeDefined();
+    const derivative = await repository.searchEvidence({
+      limit: 10,
+      parentEvidenceId: evidence.id,
+      derivationType: "ocr-text",
+    });
+    expect(derivative.evidence).toMatchObject([{ title: "OCR derivative", parentEvidenceId: evidence.id }]);
     repository.close();
   });
 });

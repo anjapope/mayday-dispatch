@@ -8,6 +8,13 @@ import {
   type UpdatePublicationRequest,
 } from "@/application/publication-gateway/dto";
 import {
+  EvidenceDetailResponseSchema,
+  EvidenceSearchResponseSchema,
+  type EvidenceDetailResponse,
+  type EvidenceSearchQuery,
+  type EvidenceSearchResponse,
+} from "@/application/evidence-gateway/dto";
+import {
   DispatchHttpTransport,
   type DispatchMachineCredential,
   type DispatchRequestOptions,
@@ -121,6 +128,14 @@ export class ResearchStudioDispatchClient {
     return this.send(`/api/publications/${publicationId}/transition`, "POST", request, options);
   }
 
+  searchEvidence(query: Partial<EvidenceSearchQuery>, options: ResearchStudioRequestOptions = {}): Promise<EvidenceSearchResponse> {
+    return this.sendEvidence(`/api/evidence?${new URLSearchParams(Object.entries(query).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)]))}`, options, EvidenceSearchResponseSchema);
+  }
+
+  getEvidence(evidenceId: string, options: ResearchStudioRequestOptions = {}): Promise<EvidenceDetailResponse> {
+    return this.sendEvidence(`/api/evidence/${evidenceId}`, options, EvidenceDetailResponseSchema);
+  }
+
   private async send(
     path: string,
     method: string,
@@ -162,6 +177,18 @@ export class ResearchStudioDispatchClient {
       );
     }
     return GatewayPublicationResponseSchema.parse(json);
+  }
+
+  private async sendEvidence<T>(path: string, options: ResearchStudioRequestOptions, schema: { parse(value: unknown): T }): Promise<T> {
+    const { response, json } = await this.transport.send(path, "GET", undefined, options);
+    if (!response.ok) {
+      const error = GatewayErrorResponseSchema.parse(json).error;
+      if (error.code === "UNAUTHORIZED" || error.code === "FORBIDDEN") {
+        throw new ResearchStudioAuthorizationError(error.code, response.status, error.correlationId);
+      }
+      throw new ResearchStudioDispatchError(error.code, response.status, error.correlationId);
+    }
+    return schema.parse(json);
   }
 
 }

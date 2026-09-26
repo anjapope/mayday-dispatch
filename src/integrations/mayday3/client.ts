@@ -3,7 +3,11 @@ import {
 } from "@/application/publication-gateway/dto";
 import {
   EvidenceGatewayResponseSchema,
+  EvidenceDetailResponseSchema,
+  EvidenceSearchResponseSchema,
+  type EvidenceDetailResponse,
   type EvidenceGatewayResponse,
+  type EvidenceSearchResponse,
 } from "@/application/evidence-gateway/dto";
 import {
   DispatchHttpTransport,
@@ -57,14 +61,18 @@ export class Mayday3EvidenceClient {
     input: Mayday3EvidenceRegistration,
     options: Mayday3RequestOptions = {},
   ): Promise<EvidenceGatewayResponse> {
-    return this.send("/api/evidence", "POST", Mayday3EvidenceRegistrationSchema.parse(input), options);
+    return this.send("/api/evidence", "POST", Mayday3EvidenceRegistrationSchema.parse(input), options, EvidenceGatewayResponseSchema);
   }
 
   getEvidence(
     evidenceId: string,
     options: Mayday3RequestOptions = {},
-  ): Promise<EvidenceGatewayResponse> {
-    return this.send(`/api/evidence/${evidenceId}`, "GET", undefined, options);
+  ): Promise<EvidenceDetailResponse> {
+    return this.send(`/api/evidence/${evidenceId}`, "GET", undefined, options, EvidenceDetailResponseSchema);
+  }
+
+  findEvidenceByChecksum(checksum: string, options: Mayday3RequestOptions = {}): Promise<EvidenceSearchResponse> {
+    return this.send(`/api/evidence?${new URLSearchParams({ checksum })}`, "GET", undefined, options, EvidenceSearchResponseSchema);
   }
 
   updateEvidenceProcessingState(
@@ -77,15 +85,17 @@ export class Mayday3EvidenceClient {
       "PATCH",
       Mayday3EvidenceUpdateSchema.parse(input),
       options,
+      EvidenceGatewayResponseSchema,
     );
   }
 
-  private async send(
+  private async send<T>(
     path: string,
     method: string,
     body: unknown,
     options: Mayday3RequestOptions,
-  ): Promise<EvidenceGatewayResponse> {
+    schema: { parse(value: unknown): T },
+  ): Promise<T> {
     const { response, json } = await this.transport.send(path, method, body, options);
     if (!response.ok) {
       const error = GatewayErrorResponseSchema.parse(json).error;
@@ -94,6 +104,6 @@ export class Mayday3EvidenceClient {
       }
       throw new Mayday3DispatchError(error.code, response.status, error.correlationId);
     }
-    return EvidenceGatewayResponseSchema.parse(json);
+    return schema.parse(json);
   }
 }

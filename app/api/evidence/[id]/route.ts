@@ -16,7 +16,7 @@ export async function GET(
   try {
     const actor = await actorFromRequest(request);
     const { id } = await params;
-    const evidence = await withOperationalLog(
+    const detail = await withOperationalLog(
       {
         operation: "evidence.retrieve",
         correlationId: context.correlationId,
@@ -24,10 +24,10 @@ export async function GET(
         application: actor?.originatingApplication,
         evidenceId: id,
       },
-      () => getEvidenceGatewayService().retrieve(actor, id),
+      () => getEvidenceGatewayService().retrieveDetail(actor, id),
     );
 
-    return jsonResponse({ evidence, correlationId: context.correlationId }, 200, context);
+    return jsonResponse({ ...detail, correlationId: context.correlationId }, 200, context);
   } catch (error) {
     return gatewayErrorResponse(error, context);
   }

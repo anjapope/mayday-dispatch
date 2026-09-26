@@ -100,4 +100,18 @@ describe("EvidenceGatewayService", () => {
       parentEvidenceId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
     }), context)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
+
+  it("limits Mayday3 discovery to checksum lookup and hides internal evidence from external consumers", async () => {
+    const registry = new InMemoryEvidenceRegistry();
+    const service = new EvidenceGatewayService({ registry });
+    await service.register(mayday3, evidence(), context);
+    await expect(service.search(mayday3, { limit: 10 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(service.search(mayday3, { checksum: "a".repeat(64), limit: 10 }))
+      .resolves.toMatchObject({ evidence: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }] });
+    const researchStudio: GatewayActor = {
+      subjectId: "research-studio", roles: ["external-application"], originatingApplication: "research-studio",
+    };
+    await expect(service.retrieveDetail(researchStudio, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+      .resolves.toMatchObject({ evidence: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }, auditHistory: [] });
+  });
 });

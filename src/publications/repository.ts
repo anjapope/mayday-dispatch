@@ -11,6 +11,11 @@ import {
 import {
   RegisteredEvidenceSchema,
   type EvidenceSaveOptions,
+  type EvidenceDetail,
+  type EvidencePublicationUse,
+  type RelatedEvidence,
+  type EvidenceSearchQuery,
+  type EvidenceSearchResult,
   type EvidenceRegistry,
   type RegisteredEvidence,
 } from "@/evidence/registry";
@@ -463,6 +468,88 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
     return this.database.prepare(`
       SELECT snapshot_json FROM evidence_revisions WHERE evidence_id = ? ORDER BY version
     `).all(id).map((row) => RegisteredEvidenceSchema.parse(JSON.parse(String(row.snapshot_json))));
+  }
+
+  async searchEvidence(query: EvidenceSearchQuery): Promise<EvidenceSearchResult> {
+    const clauses: string[] = [];
+    const values: (string | number)[] = [];
+    const add = (sql: string, value: string) => {
+      clauses.push(sql);
+      values.push(value);
+    };
+    if (query.query) {
+      add("(e.title LIKE ? OR e.description LIKE ? OR e.source LIKE ? OR e.original_identifier LIKE ?)", `%${query.query}%`);
+      values.push(`%${query.query}%`, `%${query.query}%`, `%${query.query}%`);
+    }
+
+    if (query.mediaType) add("e.media_type = ?", query.mediaType);
+    if (query.processingState) add("e.status = ?", query.processingState);
+    if (query.visibility) add("e.visibility = ?", query.visibility);
+    if (query.processor) add("e.processor = ?", query.processor);
+    if (query.source) add("e.source = ?", query.source);
+    if (query.collectionId) add("e.collection_id = ?", query.collectionId);
+    if (query.parentEvidenceId) add("e.parent_evidence_id = ?", query.parentEvidenceId);
+    if (query.derivationType) add("e.derivation_type = ?", query.derivationType);
+    if (query.fromDate) add("COALESCE(e.acquisition_at, e.registered_at) >= ?", query.fromDate);
+    if (query.toDate) add("COALESCE(e.acquisition_at, e.registered_at) <= ?", query.toDate);
+    if (query.checksum) add("e.checksum = ?", query.checksum.toLowerCase());
+    if (query.cursor) add("e.id > ?", query.cursor);
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.database.prepare(`
+      SELECT e.id FROM evidence_references e ${where}
+      ORDER BY e.id LIMIT ?
+    `).all(...values, query.limit + 1) as SqliteRow[];
+    const hasMore = rows.length > query.limit;
+    const selected = rows.slice(0, query.limit).map((row) => String(row.id));
+    return {
+      evidence: (await Promise.all(selected.map((id) => this.getRegisteredEvidence(id))))
+        .filter((item): item is RegisteredEvidence => item !== undefined),
+      nextCursor: hasMore ? selected.at(-1) : undefined,
+    };
+  }
+
+  async getEvidenceDetail(id: string): Promise<EvidenceDetail | undefined> {
+    const evidence = await this.getRegisteredEvidence(id);
+    if (!evidence) return undefined;
+    const related = new Map<string, RelatedEvidence["relationship"]>();
+    const add = (evidenceId: string, relationship: RelatedEvidence["relationship"]) => {
+      if (evidenceId !== id) related.set(evidenceId, relationship);
+    };
+    if (evidence.parentEvidenceId) add(evidence.parentEvidenceId, "parent");
+    if (evidence.supersededBy) add(evidence.supersededBy, "superseded-by");
+    const rows = this.database.prepare(`
+      SELECT id, parent_evidence_id, superseded_by, checksum, collection_id, original_identifier
+      FROM evidence_references WHERE parent_evidence_id = ? OR superseded_by = ? OR checksum = ?
+        OR (collection_id IS NOT NULL AND collection_id = ?) OR (original_identifier IS NOT NULL AND original_identifier = ?)
+    `).all(id, id, evidence.checksum.toLowerCase(), evidence.collectionId ?? "", evidence.originalIdentifier ?? "") as SqliteRow[];
+    for (const row of rows) {
+      const relatedId = String(row.id);
+      if (String(row.parent_evidence_id ?? "") === id) add(relatedId, "derivative");
+      else if (String(row.superseded_by ?? "") === id) add(relatedId, "supersedes");
+      else if (String(row.checksum).toLowerCase() === evidence.checksum.toLowerCase()) add(relatedId, "same-checksum");
+      else if (evidence.collectionId && row.collection_id === evidence.collectionId) add(relatedId, "same-collection");
+      else if (evidence.originalIdentifier && row.original_identifier === evidence.originalIdentifier) add(relatedId, "same-source-identifier");
+    }
+    const revisionHistory = this.database.prepare("SELECT version, updated_at FROM evidence_revisions WHERE evidence_id = ? ORDER BY version DESC")
+      .all(id).map((row) => ({ version: Number(row.version), updatedAt: String(row.updated_at) }));
+    const auditHistory = this.database.prepare("SELECT timestamp, action, outcome, resulting_version FROM evidence_audit_events WHERE evidence_id = ? ORDER BY timestamp DESC LIMIT 20")
+      .all(id).map((row) => ({ timestamp: String(row.timestamp), action: String(row.action), outcome: String(row.outcome), resultingVersion: row.resulting_version === null ? undefined : Number(row.resulting_version) })) as EvidenceDetail["auditHistory"];
+    const publicationUses: EvidencePublicationUse[] = this.database.prepare("SELECT publication_id FROM publication_evidence WHERE evidence_id = ?")
+      .all(id).map((row) => this.readPublication(String(row.publication_id))).map((publication) => ({
+        publicationId: publication.id, title: publication.title, lifecycleState: publication.lifecycleState,
+        publicationType: publication.type, associatedAt: publication.revision.updatedAt, visibility: publication.visibility,
+      }));
+    const relatedEvidence = Array.from(related, ([evidenceId, relationship]) => ({ evidenceId, relationship }))
+      .sort((left, right) => left.evidenceId.localeCompare(right.evidenceId));
+    return {
+      evidence, relatedEvidence,
+      possibleDuplicates: relatedEvidence.flatMap((item) =>
+        item.relationship === "same-checksum" || item.relationship === "same-source-identifier"
+          ? [{ evidenceId: item.evidenceId, reason: item.relationship }]
+          : [],
+      ),
+      revisionHistory, auditHistory, publicationUses,
+    };
   }
 
   private writeEvidenceRevision(evidence: RegisteredEvidence): void {

@@ -8,6 +8,13 @@ import {
   type UpdatePublicationRequest,
 } from "@/application/publication-gateway/dto";
 import {
+  EvidenceDetailResponseSchema,
+  EvidenceSearchResponseSchema,
+  type EvidenceDetailResponse,
+  type EvidenceSearchQuery,
+  type EvidenceSearchResponse,
+} from "@/application/evidence-gateway/dto";
+import {
   DispatchHttpTransport,
   type DispatchMachineCredential,
   type DispatchRequestOptions,
@@ -158,6 +165,14 @@ export class OverwatchDispatchClient {
     return this.send(`/api/publications/${publicationId}/transition`, "POST", request, options);
   }
 
+  searchEvidence(query: Partial<EvidenceSearchQuery>, options: OverwatchRequestOptions = {}): Promise<EvidenceSearchResponse> {
+    return this.sendEvidence(`/api/evidence?${new URLSearchParams(Object.entries(query).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)]))}`, options, EvidenceSearchResponseSchema);
+  }
+
+  getEvidence(evidenceId: string, options: OverwatchRequestOptions = {}): Promise<EvidenceDetailResponse> {
+    return this.sendEvidence(`/api/evidence/${evidenceId}`, options, EvidenceDetailResponseSchema);
+  }
+
   private async send(path: string, method: string, body: unknown, options: OverwatchRequestOptions): Promise<GatewayPublicationResponse> {
     const { response, json } = await this.transport.send(path, method, body, options);
     if (!response.ok) {
@@ -171,6 +186,16 @@ export class OverwatchDispatchClient {
       throw new OverwatchDispatchError(error.code, response.status, error.correlationId, error.details);
     }
     return GatewayPublicationResponseSchema.parse(json);
+  }
+
+  private async sendEvidence<T>(path: string, options: OverwatchRequestOptions, schema: { parse(value: unknown): T }): Promise<T> {
+    const { response, json } = await this.transport.send(path, "GET", undefined, options);
+    if (!response.ok) {
+      const error = GatewayErrorResponseSchema.parse(json).error;
+      if (error.code === "UNAUTHORIZED" || error.code === "FORBIDDEN") throw new OverwatchAuthorizationError(error.code, response.status, error.correlationId);
+      throw new OverwatchDispatchError(error.code, response.status, error.correlationId, error.details);
+    }
+    return schema.parse(json);
   }
 
 }
