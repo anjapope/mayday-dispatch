@@ -10,6 +10,8 @@ export default function EditorialHomePage() {
       </p>
       <Link className="button-link" href="/editorial/publications">Open publication queue</Link>
       <p><Link href="/editorial/evidence">Open Evidence Library</Link></p>
+      <p><Link href="/editorial/operations">Open operational controls</Link></p>
+      <p><Link href="/editorial/sign-in">Sign in</Link></p>
       <p className="notice">
         The editorial API requires a configured Dispatch editorial credential. This UI never
         bypasses the gateway authorization boundary.

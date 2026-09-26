@@ -2,12 +2,27 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPublicPublicationBySlug, getRelatedPublications } from "@/publications/public-query";
+import { canonicalUrl } from "@/publications/metadata";
 import { PublicationArticle } from "../publication-article";
 
 type Props = { params: Promise<{ slug: string }> };
+export const dynamic = "force-dynamic";
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const publication = await getPublicPublicationBySlug((await params).slug);
-  return publication ? { title: `${publication.title} | Mayday Dispatch`, description: publication.excerpt } : {};
+  if (!publication) return {};
+  const canonical = canonicalUrl(`/publications/${publication.slug}`);
+  return {
+    title: `${publication.title} | Mayday Dispatch`,
+    description: publication.excerpt,
+    alternates: canonical ? { canonical } : undefined,
+    openGraph: {
+      type: "article",
+      title: publication.title,
+      description: publication.excerpt,
+      ...(canonical ? { url: canonical } : {}),
+    },
+  };
 }
 export default async function PublicationPage({ params }: Props) {
   const publication = await getPublicPublicationBySlug((await params).slug);

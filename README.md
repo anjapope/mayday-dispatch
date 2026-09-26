@@ -25,23 +25,35 @@ npm run dev
 
 `MAYDAY_DATABASE_PATH` selects the database file and defaults to
 `data/mayday-dispatch.sqlite`. Database files, WAL files, and the `data/`
-directory are ignored by Git.
+directory are ignored by Git. `npm run dev` is development-only;
+`npm start` runs production validation, requires explicit production
+configuration and a current database, then starts the application.
 
 | Command | Purpose |
 | --- | --- |
 | `npm run db:migrate` | Apply ordered, transactional SQL migrations |
+| `npm run db:status` | Verify the installed schema is compatible and current |
+| `npm run db:backup -- <new-file>` | Create an integrity-checked SQLite snapshot |
+| `npm run db:restore -- <backup> <new-file>` | Restore a verified snapshot to a new path |
 | `npm run test:migrations` | Verify setup, restart, schema, and transaction behavior |
 | `npm test` | Run all tests |
 | `npm run test:integration` | Run the authenticated HTTP-to-SQLite integration suite |
 | `npm run typecheck` | Run strict TypeScript checks |
 | `npm run lint` | Run ESLint |
+| `npm run build` | Build the production application |
 
 The authenticated editorial queue and readiness review are documented in
 [docs/editorial-workspace.md](docs/editorial-workspace.md).
 Publication lifecycle operations are documented in
 [docs/publication-operations.md](docs/publication-operations.md), with correction semantics in
 [docs/corrections.md](docs/corrections.md).
-| `npm run build` | Build the production application |
+
+The provider-neutral Docker/Compose production baseline, credentials, signed
+editorial sessions, SQLite migration/backup/restore procedures, publication
+lockdown, HTTPS boundary, monitoring, and rollback are documented in the
+[production runbook](docs/production-runbook.md). Do not run a production
+database on shared/network storage or expose the Compose port directly to the
+public internet.
 
 ## Editorial guarantees
 

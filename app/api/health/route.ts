@@ -10,10 +10,20 @@ export async function GET() {
   const repository = getPublicationRepository();
   const health = (await repository.checkHealth?.()) ?? {
     databaseReachable: false,
-    migrations: { appliedCount: 0, availableCount: 0, upToDate: false },
+    migrations: {
+      appliedCount: 0,
+      availableCount: 0,
+      schemaVersion: 0,
+      targetSchemaVersion: 0,
+      compatible: false,
+      upToDate: false,
+    },
   };
 
-  const healthy = health.databaseReachable && health.migrations.upToDate;
+  const healthy =
+    health.databaseReachable &&
+    health.migrations.compatible &&
+    health.migrations.upToDate;
 
   return NextResponse.json(
     {
@@ -23,6 +33,9 @@ export async function GET() {
       migrations: {
         appliedCount: health.migrations.appliedCount,
         availableCount: health.migrations.availableCount,
+        schemaVersion: health.migrations.schemaVersion,
+        targetSchemaVersion: health.migrations.targetSchemaVersion,
+        compatible: health.migrations.compatible,
         upToDate: health.migrations.upToDate,
       },
     },

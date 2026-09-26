@@ -20,3 +20,11 @@ Services, and Contact in the primary navigation. These destinations classify
 already-public publications without duplicating records or changing the
 underlying publication authority model. The public visual system is documented
 in [public-visual-system.md](./public-visual-system.md).
+
+Production indexing is generated from the same public query boundary. The
+robots file disallows editorial and API paths (authorization remains the
+privacy boundary), and the sitemap includes only public, published/updated
+records. Set `MAYDAY_PUBLIC_BASE_URL` to the selected HTTPS origin before
+enabling indexing; without it no canonical origin is guessed and the sitemap
+is empty. Editorial routes are marked `noindex`. Production asset and HTTPS
+rules are documented in [production-runbook.md](./production-runbook.md).

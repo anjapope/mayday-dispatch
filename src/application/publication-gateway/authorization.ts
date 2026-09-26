@@ -6,6 +6,7 @@ export type GatewayRole =
   | "editor"
   | "publisher"
   | "admin"
+  | "operator"
   | "public-reader";
 
 export const GATEWAY_ROLES: readonly GatewayRole[] = [
@@ -13,6 +14,7 @@ export const GATEWAY_ROLES: readonly GatewayRole[] = [
   "editor",
   "publisher",
   "admin",
+  "operator",
   "public-reader",
 ];
 

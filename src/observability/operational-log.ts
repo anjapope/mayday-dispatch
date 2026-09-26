@@ -45,6 +45,25 @@ export function resetOperationalLogSink(): void {
   sink = defaultSink;
 }
 
+export function logOperationalEvent(
+  operation: string,
+  context: { correlationId: string; requestId: string },
+  errorCode?: string,
+  result: OperationOutcome = "error",
+  application?: string,
+): void {
+  sink({
+    timestamp: new Date().toISOString(),
+    operation,
+    correlationId: context.correlationId,
+    requestId: context.requestId,
+    application,
+    result,
+    durationMs: 0,
+    errorCode,
+  });
+}
+
 export type OperationLogMeta = {
   operation: string;
   correlationId: string;

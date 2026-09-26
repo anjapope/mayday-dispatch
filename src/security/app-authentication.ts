@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { GATEWAY_ROLES, type GatewayActor, type GatewayRole } from "@/application/publication-gateway/authorization";
 import { GatewayError } from "@/application/publication-gateway/errors";
@@ -58,7 +59,24 @@ export type ApplicationCredential = z.infer<typeof ApplicationCredentialSchema>;
 const SIGNATURE_WINDOW_MS = 5 * 60 * 1000;
 
 function loadCredentials(): ApplicationCredential[] {
-  const raw = process.env.MAYDAY_APPLICATION_CREDENTIALS;
+  const credentialsFile = process.env.MAYDAY_APPLICATION_CREDENTIALS_FILE;
+  let raw = process.env.MAYDAY_APPLICATION_CREDENTIALS;
+  if (credentialsFile && raw) {
+    throw new GatewayError(
+      "INTERNAL_ERROR",
+      "Configure only one application credential source.",
+    );
+  }
+  if (credentialsFile) {
+    try {
+      raw = readFileSync(credentialsFile, "utf8");
+    } catch {
+      throw new GatewayError(
+        "INTERNAL_ERROR",
+        "The application credential configuration could not be loaded.",
+      );
+    }
+  }
   if (!raw || raw.trim().length === 0) {
     return [];
   }
@@ -102,6 +120,17 @@ function toActor(credential: ApplicationCredential): GatewayActor {
     roles: [...credential.roles],
     originatingApplication: credential.applicationName,
   };
+}
+
+export function resolveConfiguredCredentialActor(
+  subjectId: string,
+  applicationName: string,
+): GatewayActor | undefined {
+  const credential = loadCredentials().find(
+    (candidate) =>
+      candidate.subjectId === subjectId && candidate.applicationName === applicationName,
+  );
+  return credential ? toActor(credential) : undefined;
 }
 
 function resolveBearerToken(

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -58,6 +59,26 @@ export type LifecycleHistoryEntry = {
   changedAt: string;
 };
 
+export type PublicationLockdown = {
+  enabled: boolean;
+  version: number;
+  changedAt: string;
+  changedBySubject: string;
+};
+
+export type OperationalAuditEvent = {
+  id: string;
+  timestamp: string;
+  actorSubject: string;
+  actorRoles: string[];
+  actorApplication?: string;
+  action: "publication_lockdown.activated" | "publication_lockdown.deactivated";
+  controlName: "publication-lockdown";
+  resultingVersion: number;
+  correlationId: string;
+  requestId: string;
+};
+
 export class RepositoryConcurrencyError extends Error {
   constructor(readonly expectedVersion: number, readonly actualVersion: number | undefined) {
     super("Publication version does not match the persisted version.");
@@ -98,6 +119,13 @@ export interface PublicationRepository {
   listRevisionHistory?(publicationId: string): Promise<RevisionHistoryEntry[]>;
   listLifecycleHistory?(publicationId: string): Promise<LifecycleHistoryEntry[]>;
   checkHealth?(): Promise<RepositoryHealth>;
+  getPublicationLockdown?(): Promise<PublicationLockdown>;
+  setPublicationLockdown?(
+    enabled: boolean,
+    actor: { subjectId: string; roles: string[]; originatingApplication?: string },
+    context: { correlationId: string; requestId: string },
+    timestamp: string,
+  ): Promise<PublicationLockdown>;
 }
 
 export type RepositoryHealth = {
@@ -122,6 +150,13 @@ export class InMemoryPublicationRepository implements PublicationRepository {
   private readonly publications = new Map<string, Publication>();
   private readonly idempotency = new Map<string, IdempotencyRecord>();
   readonly auditEvents: AuditEvent[] = [];
+  readonly operationalAuditEvents: OperationalAuditEvent[] = [];
+  private publicationLockdown: PublicationLockdown = {
+    enabled: false,
+    version: 0,
+    changedAt: "1970-01-01T00:00:00.000Z",
+    changedBySubject: "system-bootstrap",
+  };
 
   constructor(fixtures: readonly Publication[] = []) {
     for (const publication of fixtures) {
@@ -190,8 +225,49 @@ export class InMemoryPublicationRepository implements PublicationRepository {
   async checkHealth(): Promise<RepositoryHealth> {
     return {
       databaseReachable: true,
-      migrations: { appliedCount: 0, availableCount: 0, upToDate: true },
+      migrations: {
+        appliedCount: 0,
+        availableCount: 0,
+        schemaVersion: 0,
+        targetSchemaVersion: 0,
+        compatible: true,
+        upToDate: true,
+      },
     };
+  }
+
+  async getPublicationLockdown(): Promise<PublicationLockdown> {
+    return structuredClone(this.publicationLockdown);
+  }
+
+  async setPublicationLockdown(
+    enabled: boolean,
+    actor: { subjectId: string; roles: string[]; originatingApplication?: string },
+    context: { correlationId: string; requestId: string },
+    timestamp: string,
+  ): Promise<PublicationLockdown> {
+    if (this.publicationLockdown.enabled === enabled) {
+      return structuredClone(this.publicationLockdown);
+    }
+    this.publicationLockdown = {
+      enabled,
+      version: this.publicationLockdown.version + 1,
+      changedAt: timestamp,
+      changedBySubject: actor.subjectId,
+    };
+    this.operationalAuditEvents.push({
+      id: randomUUID(),
+      timestamp,
+      actorSubject: actor.subjectId,
+      actorRoles: [...actor.roles],
+      actorApplication: actor.originatingApplication,
+      action: enabled ? "publication_lockdown.activated" : "publication_lockdown.deactivated",
+      controlName: "publication-lockdown",
+      resultingVersion: this.publicationLockdown.version,
+      correlationId: context.correlationId,
+      requestId: context.requestId,
+    });
+    return structuredClone(this.publicationLockdown);
   }
 }
 
@@ -206,7 +282,9 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
       mkdirSync(dirname(resolvedPath), { recursive: true });
     }
     this.database = new DatabaseSync(resolvedPath);
-    this.database.exec("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
+    this.database.exec(
+      "PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;",
+    );
     if (options.migrate !== false) {
       runMigrations(this.database);
     }
@@ -233,6 +311,77 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
       databaseReachable,
       migrations: getMigrationStatus(this.database),
     };
+  }
+
+  async getPublicationLockdown(): Promise<PublicationLockdown> {
+    const row = this.database
+      .prepare(`
+        SELECT enabled, version, changed_at, changed_by_subject
+        FROM operational_controls WHERE control_name = 'publication-lockdown'
+      `)
+      .get() as SqliteRow | undefined;
+    if (!row) {
+      throw new RepositoryPersistenceError("read-operational-control");
+    }
+    return {
+      enabled: Number(row.enabled) === 1,
+      version: Number(row.version),
+      changedAt: String(row.changed_at),
+      changedBySubject: String(row.changed_by_subject),
+    };
+  }
+
+  async setPublicationLockdown(
+    enabled: boolean,
+    actor: { subjectId: string; roles: string[]; originatingApplication?: string },
+    context: { correlationId: string; requestId: string },
+    timestamp: string,
+  ): Promise<PublicationLockdown> {
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const current = await this.getPublicationLockdown();
+      if (current.enabled === enabled) {
+        this.database.exec("COMMIT");
+        return current;
+      }
+      const version = current.version + 1;
+      this.database
+        .prepare(`
+          UPDATE operational_controls
+          SET enabled = ?, version = ?, changed_at = ?, changed_by_subject = ?
+          WHERE control_name = 'publication-lockdown'
+        `)
+        .run(Number(enabled), version, timestamp, actor.subjectId);
+      this.database
+        .prepare(`
+          INSERT INTO operational_audit_events (
+            id, timestamp, actor_subject, actor_roles_json, actor_application,
+            action, control_name, resulting_version, correlation_id, request_id
+          ) VALUES (?, ?, ?, ?, ?, ?, 'publication-lockdown', ?, ?, ?)
+        `)
+        .run(
+          randomUUID(),
+          timestamp,
+          actor.subjectId,
+          JSON.stringify(actor.roles),
+          actor.originatingApplication ?? null,
+          enabled ? "publication_lockdown.activated" : "publication_lockdown.deactivated",
+          version,
+          context.correlationId,
+          context.requestId,
+        );
+      this.database.exec("COMMIT");
+      return {
+        enabled,
+        version,
+        changedAt: timestamp,
+        changedBySubject: actor.subjectId,
+      };
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      if (error instanceof RepositoryPersistenceError) throw error;
+      throw new RepositoryPersistenceError("write-operational-control", { cause: error });
+    }
   }
 
   async list(): Promise<Publication[]> {

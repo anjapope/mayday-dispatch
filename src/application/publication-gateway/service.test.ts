@@ -329,6 +329,83 @@ describe("PublicationGatewayService Phase Three", () => {
     expect(repository.auditEvents.map((event) => event.revisionType)).toContain("substantive-update");
   });
 
+  it("blocks update-path public releases during publication lockdown", async () => {
+    const { service, repository } = createHarness();
+    const publish = async (slug: string, visibility: "public" | "internal") => {
+      const created = await service.createDraft(
+        researchDraft({
+          slug,
+          visibility,
+          sources: [publicSource],
+          origin: {
+            kind: "academic-publication",
+            label: "Research Studio",
+            url: "https://example.org/research/phase-eleven-lockdown",
+            originatingApplication: "Research Studio",
+            originatingProject: "Climate Desk",
+            stableObjectId: `research:${slug}`,
+          },
+        }),
+        editorActor,
+        context,
+      );
+      const review = await service.transition(
+        created.publication.id,
+        { to: "review", expectedVersion: created.publication.revision.version },
+        editorActor,
+        context,
+      );
+      const ready = await service.transition(
+        created.publication.id,
+        { to: "ready", expectedVersion: review.publication.revision.version },
+        editorActor,
+        context,
+      );
+      return service.transition(
+        created.publication.id,
+        { to: "published", expectedVersion: ready.publication.revision.version },
+        publisherActor,
+        context,
+      );
+    };
+    const internal = await publish("lockdown-visibility-check", "internal");
+    const publicRelease = await publish("lockdown-update-check", "public");
+    await repository.setPublicationLockdown(
+      true,
+      { subjectId: "operator-1", roles: ["operator"] },
+      context,
+      "2026-09-22T19:30:10.431Z",
+    );
+
+    await expect(
+      service.update(
+        internal.publication.id,
+        {
+          expectedVersion: internal.publication.revision.version,
+          revisionType: "correction",
+          visibility: "public",
+        },
+        editorActor,
+        context,
+      ),
+    ).rejects.toMatchObject({ code: "PUBLICATION_LOCKED" });
+    await expect(
+      service.update(
+        publicRelease.publication.id,
+        {
+          expectedVersion: publicRelease.publication.revision.version,
+          revisionType: "substantive-update",
+          title: "Lockdown bypass",
+        },
+        editorActor,
+        context,
+      ),
+    ).rejects.toMatchObject({ code: "PUBLICATION_LOCKED" });
+
+    expect((await repository.findById(internal.publication.id))?.visibility).toBe("internal");
+    expect((await repository.findById(publicRelease.publication.id))?.lifecycleState).toBe("published");
+  });
+
   it("keeps upstream applications from changing editorial workflow state or publishing", async () => {
     const { service } = createHarness();
     const created = await service.createDraft(researchDraft(), researchActor, context);

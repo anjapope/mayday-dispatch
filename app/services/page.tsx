@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-export const metadata: Metadata = { title: "Services | Mayday Dispatch", description: "Commissioned research, monitoring, and evidence-organization work." };
+import { canonicalUrl } from "@/publications/metadata";
+export const metadata: Metadata = {
+  title: "Services | Mayday Dispatch",
+  description: "Commissioned research, monitoring, and evidence-organization work.",
+  alternates: { canonical: canonicalUrl("/services") },
+};
 const services = [
   ["Research and evidence synthesis", "Structured research, source review, and concise findings for defined questions."],
   ["Monitoring and analytical reporting", "OSINT monitoring and recurring reports with stated sources, caveats, and update paths."],

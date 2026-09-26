@@ -1,7 +1,22 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPublicSeries } from "@/publications/public-query";
+import { canonicalUrl } from "@/publications/metadata";
 import { PublicationCard } from "../../publications/publication-card";
+
+export const dynamic = "force-dynamic";
+
+export async function generateMetadata({
+  params,
+}: { params: Promise<{ seriesId: string }> }): Promise<Metadata> {
+  const seriesId = (await params).seriesId;
+  const canonical = canonicalUrl(`/series/${encodeURIComponent(seriesId)}`);
+  return {
+    title: `${seriesId} | Mayday Dispatch`,
+    alternates: canonical ? { canonical } : undefined,
+  };
+}
 
 export default async function SeriesPage({ params }: { params: Promise<{ seriesId: string }> }) {
   const seriesId = (await params).seriesId;

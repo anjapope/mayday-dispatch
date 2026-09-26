@@ -23,6 +23,8 @@ const researchStudioToken = "research-studio-machine-token";
 const overwatchToken = "overwatch-machine-token";
 const mayday3Token = "mayday3-machine-token";
 const editorialToken = "dispatch-editorial-machine-token";
+const operatorToken = "dispatch-operator-machine-token";
+const sessionSecret = "phase-eleven-integration-session-key-32-bytes";
 
 const evidence = {
   id: "22222222-2222-4222-8222-222222222222",
@@ -80,6 +82,15 @@ type Routes = {
   editorialPublication: (request: Request, context: { params: Promise<{ id: string }> }) => Promise<Response>;
   editorialPreview: (request: Request, context: { params: Promise<{ id: string }> }) => Promise<Response>;
   editorialTransition: (request: Request, context: { params: Promise<{ id: string }> }) => Promise<Response>;
+  publicationLockdown: {
+    GET: (request: Request) => Promise<Response>;
+    PUT: (request: Request) => Promise<Response>;
+  };
+  editorialSession: {
+    GET: (request: Request) => Promise<Response>;
+    POST: (request: Request) => Promise<Response>;
+    DELETE: (request: Request) => Promise<Response>;
+  };
 };
 
 let routes: Routes;
@@ -99,6 +110,21 @@ function routeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Respo
   const editorialPreviewMatch = url.pathname.match(/^\/api\/editorial\/publications\/([^/]+)\/preview$/);
   const editorialTransitionMatch = url.pathname.match(/^\/api\/editorial\/publications\/([^/]+)\/transition$/);
 
+  if (url.pathname === "/api/operations/publication-lockdown" && request.method === "GET") {
+    return routes.publicationLockdown.GET(request);
+  }
+  if (url.pathname === "/api/operations/publication-lockdown" && request.method === "PUT") {
+    return routes.publicationLockdown.PUT(request);
+  }
+  if (url.pathname === "/api/editorial/session" && request.method === "GET") {
+    return routes.editorialSession.GET(request);
+  }
+  if (url.pathname === "/api/editorial/session" && request.method === "POST") {
+    return routes.editorialSession.POST(request);
+  }
+  if (url.pathname === "/api/editorial/session" && request.method === "DELETE") {
+    return routes.editorialSession.DELETE(request);
+  }
   if (url.pathname === "/api/publications" && request.method === "POST") {
     return routes.create(request);
   }
@@ -156,6 +182,8 @@ beforeAll(async () => {
     databasePath: process.env.MAYDAY_DATABASE_PATH,
     credentials: process.env.MAYDAY_APPLICATION_CREDENTIALS,
     trustDevHeaders: process.env.MAYDAY_TRUST_DEV_HEADERS,
+    sessionSecret: process.env.MAYDAY_SESSION_SECRET,
+    publicBaseUrl: process.env.MAYDAY_PUBLIC_BASE_URL,
   };
   process.env.MAYDAY_DATABASE_PATH = databasePath;
   process.env.MAYDAY_APPLICATION_CREDENTIALS = JSON.stringify([
@@ -183,12 +211,27 @@ beforeAll(async () => {
       roles: ["external-application"],
       tokenHash: hash(mayday3Token),
     },
+    {
+      applicationName: "Dispatch Operations",
+      subjectId: "dispatch-operator",
+      roles: ["operator"],
+      tokenHash: hash(operatorToken),
+    },
   ]);
+  process.env.MAYDAY_SESSION_SECRET = sessionSecret;
+  process.env.MAYDAY_PUBLIC_BASE_URL = "https://dispatch.integration.test";
   delete process.env.MAYDAY_TRUST_DEV_HEADERS;
   restoreEnvironment = () => {
-    process.env.MAYDAY_DATABASE_PATH = previous.databasePath;
-    process.env.MAYDAY_APPLICATION_CREDENTIALS = previous.credentials;
-    process.env.MAYDAY_TRUST_DEV_HEADERS = previous.trustDevHeaders;
+    if (previous.databasePath === undefined) delete process.env.MAYDAY_DATABASE_PATH;
+    else process.env.MAYDAY_DATABASE_PATH = previous.databasePath;
+    if (previous.credentials === undefined) delete process.env.MAYDAY_APPLICATION_CREDENTIALS;
+    else process.env.MAYDAY_APPLICATION_CREDENTIALS = previous.credentials;
+    if (previous.trustDevHeaders === undefined) delete process.env.MAYDAY_TRUST_DEV_HEADERS;
+    else process.env.MAYDAY_TRUST_DEV_HEADERS = previous.trustDevHeaders;
+    if (previous.sessionSecret === undefined) delete process.env.MAYDAY_SESSION_SECRET;
+    else process.env.MAYDAY_SESSION_SECRET = previous.sessionSecret;
+    if (previous.publicBaseUrl === undefined) delete process.env.MAYDAY_PUBLIC_BASE_URL;
+    else process.env.MAYDAY_PUBLIC_BASE_URL = previous.publicBaseUrl;
   };
 
   const publications = await import("../../../app/api/publications/route");
@@ -202,6 +245,8 @@ beforeAll(async () => {
   const editorialPublication = await import("../../../app/api/editorial/publications/[id]/route");
   const editorialPreview = await import("../../../app/api/editorial/publications/[id]/preview/route");
   const editorialTransition = await import("../../../app/api/editorial/publications/[id]/transition/route");
+  const publicationLockdown = await import("../../../app/api/operations/publication-lockdown/route");
+  const editorialSession = await import("../../../app/api/editorial/session/route");
   routes = {
     create: publications.POST,
     retrieve: publication.GET,
@@ -216,6 +261,8 @@ beforeAll(async () => {
     editorialPublication: editorialPublication.GET,
     editorialPreview: editorialPreview.GET,
     editorialTransition: editorialTransition.POST,
+    publicationLockdown,
+    editorialSession,
   };
 });
 
@@ -878,5 +925,221 @@ describe("Research Studio HTTP to Dispatch SQLite integration", () => {
         body: JSON.stringify({ to: "review", expectedVersion: 1 }),
       }),
     ).resolves.toMatchObject({ status: 403 });
+  });
+
+  it("enforces editorial sessions and audited publication lockdown at the HTTP boundary", async () => {
+    const editorialSignIn = await routeFetch(
+      "https://dispatch.integration.test/api/editorial/session",
+      { method: "POST", headers: { authorization: `Bearer ${editorialToken}` } },
+    );
+    expect(editorialSignIn.status).toBe(200);
+    const editorialCookie = editorialSignIn.headers.get("set-cookie");
+    expect(editorialCookie).toContain("HttpOnly");
+    expect(editorialCookie).toContain("SameSite=Strict");
+    const sessionResponse = await routeFetch(
+      "https://dispatch.integration.test/api/editorial/session",
+      { headers: { cookie: editorialCookie!.split(";")[0] } },
+    );
+    expect(sessionResponse.status).toBe(200);
+    expect(await sessionResponse.json()).toMatchObject({
+      actor: { subjectId: "dispatch-editorial-service", roles: ["editor", "publisher"] },
+    });
+    const sessionQueue = await routeFetch(
+      "https://dispatch.integration.test/api/editorial/publications",
+      { headers: { cookie: editorialCookie!.split(";")[0] } },
+    );
+    expect(sessionQueue.status).toBe(200);
+
+    const operatorSignIn = await routeFetch(
+      "https://dispatch.integration.test/api/editorial/session",
+      { method: "POST", headers: { authorization: `Bearer ${operatorToken}` } },
+    );
+    expect(operatorSignIn.status).toBe(200);
+    const operatorCookie = operatorSignIn.headers.get("set-cookie")!.split(";")[0];
+
+    const researchClient = new ResearchStudioDispatchClient({
+      baseUrl: "https://dispatch.integration.test",
+      applicationName: "Research Studio",
+      credential: { bearerToken: researchStudioToken },
+      fetch: routeFetch as typeof fetch,
+    });
+    const editorialClient = new ResearchStudioDispatchClient({
+      baseUrl: "https://dispatch.integration.test",
+      applicationName: "Dispatch Editorial",
+      credential: { bearerToken: editorialToken },
+      fetch: routeFetch as typeof fetch,
+    });
+    const created = await researchClient.createDraft({
+      ...draft,
+      slug: "phase-eleven-lockdown-acceptance",
+      origin: { ...draft.origin, stableObjectId: "research:phase-eleven-lockdown:1" },
+      title: "Phase Eleven Lockdown Acceptance",
+    });
+    const beforeRelease = await routeFetch(
+      "https://dispatch.integration.test/api/public/publications/phase-eleven-lockdown-acceptance",
+    );
+    expect(beforeRelease.status).toBe(404);
+    const { default: sitemap } = await import("../../../app/sitemap");
+    const sitemapBeforeRelease = await sitemap();
+    expect(sitemapBeforeRelease.map((entry) => entry.url)).not.toContain(
+      "https://dispatch.integration.test/publications/phase-eleven-lockdown-acceptance",
+    );
+
+    const deniedUpstreamRelease = await routeFetch(
+      `https://dispatch.integration.test/api/publications/${created.publication.id}/transition`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${researchStudioToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ to: "review", expectedVersion: 1 }),
+      },
+    );
+    expect(deniedUpstreamRelease.status).toBe(403);
+
+    const review = await editorialClient.requestLifecycle(created.publication.id, {
+      to: "review",
+      expectedVersion: 1,
+      revisionSummary: "Start the acceptance review.",
+    });
+    const ready = await editorialClient.requestLifecycle(created.publication.id, {
+      to: "ready",
+      expectedVersion: review.originLink.version,
+      revisionSummary: "Complete readiness checks.",
+    });
+
+    const crossOriginToggle = await routeFetch(
+      "https://dispatch.integration.test/api/operations/publication-lockdown",
+      {
+        method: "PUT",
+        headers: {
+          cookie: operatorCookie,
+          origin: "https://attacker.example",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ enabled: true }),
+      },
+    );
+    expect(crossOriginToggle.status).toBe(403);
+
+    const activate = await routeFetch(
+      "https://dispatch.integration.test/api/operations/publication-lockdown",
+      {
+        method: "PUT",
+        headers: {
+          cookie: operatorCookie,
+          origin: "https://dispatch.integration.test",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ enabled: true }),
+      },
+    );
+    expect(activate.status).toBe(200);
+    expect(await activate.json()).toMatchObject({
+      publicationLockdown: { enabled: true, version: 1, changedBySubject: "dispatch-operator" },
+    });
+
+    const operatorCannotPublish = await routeFetch(
+      `https://dispatch.integration.test/api/publications/${created.publication.id}/transition`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${operatorToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          to: "published",
+          expectedVersion: ready.originLink.version,
+          revisionSummary: "Operator must not publish.",
+        }),
+      },
+    );
+    expect(operatorCannotPublish.status).toBe(403);
+
+    const blockedRelease = await routeFetch(
+      `https://dispatch.integration.test/api/publications/${created.publication.id}/transition`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${editorialToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          to: "published",
+          expectedVersion: ready.originLink.version,
+          revisionSummary: "Release blocked by operational lockdown.",
+        }),
+      },
+    );
+    expect(blockedRelease.status).toBe(423);
+    expect((await routeFetch(
+      "https://dispatch.integration.test/api/public/publications/phase-eleven-lockdown-acceptance",
+    )).status).toBe(404);
+
+    const publishedBeforeLockdown = await routeFetch(
+      "https://dispatch.integration.test/api/public/publications/research-studio-http-integration",
+    );
+    expect(publishedBeforeLockdown.status).toBe(200);
+
+    const deactivate = await routeFetch(
+      "https://dispatch.integration.test/api/operations/publication-lockdown",
+      {
+        method: "PUT",
+        headers: {
+          cookie: operatorCookie,
+          origin: "https://dispatch.integration.test",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ enabled: false }),
+      },
+    );
+    expect(deactivate.status).toBe(200);
+    expect(await deactivate.json()).toMatchObject({
+      publicationLockdown: { enabled: false, version: 2, changedBySubject: "dispatch-operator" },
+    });
+
+    const release = await editorialClient.requestLifecycle(created.publication.id, {
+      to: "published",
+      expectedVersion: ready.originLink.version,
+      revisionSummary: "Explicitly release the approved revision.",
+    });
+    expect(release.publication.lifecycleState).toBe("published");
+    expect((await routeFetch(
+      "https://dispatch.integration.test/api/public/publications/phase-eleven-lockdown-acceptance",
+    )).status).toBe(200);
+    expect((await sitemap()).map((entry) => entry.url)).toContain(
+      "https://dispatch.integration.test/publications/phase-eleven-lockdown-acceptance",
+    );
+
+    const { SqlitePublicationRepository } = await import("@/publications/repository");
+    const repository = new SqlitePublicationRepository(databasePath, { migrate: false });
+    const lockdownEvents = repository.database.prepare(`
+      SELECT action, actor_subject, resulting_version
+      FROM operational_audit_events
+      WHERE control_name = 'publication-lockdown' ORDER BY resulting_version
+    `).all();
+    expect(lockdownEvents).toEqual([
+      expect.objectContaining({
+        action: "publication_lockdown.activated",
+        actor_subject: "dispatch-operator",
+        resulting_version: 1,
+      }),
+      expect.objectContaining({
+        action: "publication_lockdown.deactivated",
+        actor_subject: "dispatch-operator",
+        resulting_version: 2,
+      }),
+    ]);
+    expect(repository.database.prepare(`
+      SELECT action, actor_subject, resulting_version, timestamp
+      FROM audit_events WHERE publication_id = ? AND action = 'publication.release'
+    `).get(created.publication.id)).toMatchObject({
+      action: "publication.release",
+      actor_subject: "dispatch-editorial-service",
+      resulting_version: release.originLink.version,
+      timestamp: expect.any(String),
+    });
+    repository.close();
   });
 });

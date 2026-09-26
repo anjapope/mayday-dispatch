@@ -377,6 +377,14 @@ export class PublicationGatewayService {
           : {}),
       },
     });
+    if (
+      updated.visibility === "public" &&
+      PUBLIC_LIFECYCLE_STATES.includes(updated.lifecycleState) &&
+      (publication.visibility !== "public" ||
+        publication.lifecycleState !== updated.lifecycleState)
+    ) {
+      await this.assertPublicReleaseUnlocked();
+    }
     const saved = await this.persist(updated, {
       expectedVersion: request.expectedVersion,
       auditEvent: this.auditEvent(
@@ -469,6 +477,9 @@ export class PublicationGatewayService {
     ) {
       throw new GatewayError("FORBIDDEN", "Publishing requires a publisher or admin actor.");
     }
+    if (request.to === "published" || request.to === "updated") {
+      await this.assertPublicReleaseUnlocked();
+    }
     if (request.to === "published") {
       const readiness = validatePublicationReadiness(publication);
       if (!readiness.ready) {
@@ -493,9 +504,13 @@ export class PublicationGatewayService {
     const saved = await this.persist(updated, {
       expectedVersion: request.expectedVersion,
       auditEvent: this.auditEvent(
-        request.to === "archived"
-          ? "publication.archive"
-          : "publication.lifecycle.transition",
+        request.to === "published"
+          ? "publication.release"
+          : request.to === "updated"
+            ? "publication.release.update"
+            : request.to === "archived"
+              ? "publication.archive"
+              : "publication.lifecycle.transition",
         updated,
         actor,
         context,
@@ -636,7 +651,7 @@ export class PublicationGatewayService {
   ): AuditEvent {
     return {
       id: this.idFactory(),
-      timestamp: this.now().toISOString(),
+      timestamp: publication.revision.updatedAt,
       actor: {
         subjectId: actor?.subjectId ?? "unknown",
         roles: actor?.roles ?? [],
@@ -679,6 +694,15 @@ export class PublicationGatewayService {
         );
       }
       throw error;
+    }
+  }
+
+  private async assertPublicReleaseUnlocked(): Promise<void> {
+    if ((await this.repository.getPublicationLockdown?.())?.enabled) {
+      throw new GatewayError(
+        "PUBLICATION_LOCKED",
+        "Dispatch publication lockdown is active; new public releases are blocked.",
+      );
     }
   }
 

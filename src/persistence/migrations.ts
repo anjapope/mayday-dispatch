@@ -1,69 +1,22 @@
-import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import {
+  getMigrationStatus as getStatus,
+  runMigrations as applyMigrations,
+  type MigrationStatus,
+} from "./migration-engine.mjs";
 
-export type MigrationStatus = {
-  appliedCount: number;
-  availableCount: number;
-  upToDate: boolean;
-};
+export type { MigrationStatus } from "./migration-engine.mjs";
 
-/**
- * Reports migration readiness without exposing any filesystem paths.
- * Used by the `/api/health` endpoint (see docs/operations.md).
- */
 export function getMigrationStatus(
   database: DatabaseSync,
-  migrationsDirectory = join(process.cwd(), "src", "persistence", "migrations"),
+  migrationsDirectory?: string,
 ): MigrationStatus {
-  const availableCount = readdirSync(migrationsDirectory).filter((file) => file.endsWith(".sql")).length;
-  let appliedCount = 0;
-  try {
-    const row = database
-      .prepare("SELECT COUNT(*) AS count FROM schema_migrations")
-      .get() as { count?: number } | undefined;
-    appliedCount = Number(row?.count ?? 0);
-  } catch {
-    appliedCount = 0;
-  }
-
-  return {
-    appliedCount,
-    availableCount,
-    upToDate: appliedCount === availableCount,
-  };
+  return getStatus(database, migrationsDirectory);
 }
 
 export function runMigrations(
   database: DatabaseSync,
-  migrationsDirectory = join(process.cwd(), "src", "persistence", "migrations"),
+  migrationsDirectory?: string,
 ): void {
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      name TEXT PRIMARY KEY,
-      applied_at TEXT NOT NULL
-    )
-  `);
-
-  for (const name of readdirSync(migrationsDirectory).filter((file) => file.endsWith(".sql")).sort()) {
-    const sql = readFileSync(join(migrationsDirectory, name), "utf8");
-    database.exec("BEGIN IMMEDIATE");
-    try {
-      const alreadyApplied = database
-        .prepare("SELECT 1 FROM schema_migrations WHERE name = ?")
-        .get(name);
-      if (alreadyApplied) {
-        database.exec("COMMIT");
-        continue;
-      }
-      database.exec(sql);
-      database
-        .prepare("INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)")
-        .run(name, new Date().toISOString());
-      database.exec("COMMIT");
-    } catch (error) {
-      database.exec("ROLLBACK");
-      throw error;
-    }
-  }
+  applyMigrations(database, migrationsDirectory);
 }

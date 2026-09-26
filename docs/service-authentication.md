@@ -31,3 +31,20 @@ Authorization remains a separate `PublicationAuthorizationPolicy` or
 `EvidenceAuthorizationPolicy` decision. Development identity headers are
 available only when `MAYDAY_TRUST_DEV_HEADERS=true` (and automatically during
 tests); they are not a production client contract.
+
+The credential configuration can be supplied as `MAYDAY_APPLICATION_CREDENTIALS`
+or, preferably for production, through `MAYDAY_APPLICATION_CREDENTIALS_FILE`.
+Production startup requires separate credentials for Research Studio,
+Overwatch, and Mayday3, plus distinct configured editorial publisher and
+operator identities. Upstream roles cannot include editorial or publisher
+authority, and the operator role cannot include publisher/admin authority.
+
+Editorial browser sign-in exchanges an application-configured Dispatch account
+credential for a signed, eight-hour, `HttpOnly`, `SameSite=Strict` cookie. The
+signing key is supplied through `MAYDAY_SESSION_SECRET_FILE` or the
+`MAYDAY_SESSION_SECRET` runtime setting and is never exposed to browser code.
+Sessions resolve current roles from the server configuration and reject
+cross-origin state-changing requests. This is not an OIDC/MFA provider; protect
+editorial routes with the organization's identity perimeter and rate limits.
+See the [production runbook](./production-runbook.md) for provisioning,
+rotation, and deployment requirements.

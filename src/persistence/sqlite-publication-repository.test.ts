@@ -95,6 +95,8 @@ describe("SqlitePublicationRepository", () => {
         "publication_citations",
         "lifecycle_history",
         "audit_events",
+        "operational_controls",
+        "operational_audit_events",
         "idempotency_keys",
         "evidence_revisions",
         "evidence_audit_events",
@@ -104,7 +106,7 @@ describe("SqlitePublicationRepository", () => {
     );
     expect(
       repository.database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get(),
-    ).toMatchObject({ count: 6 });
+    ).toMatchObject({ count: 7 });
     repository.close();
   });
 

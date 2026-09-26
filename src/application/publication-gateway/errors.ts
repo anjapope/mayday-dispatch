@@ -15,6 +15,7 @@ export const GatewayErrorCodeSchema = z.enum([
   "INVALID_TRANSITION",
   "EVIDENCE_POLICY_VIOLATION",
   "EDITORIAL_LOCK",
+  "PUBLICATION_LOCKED",
   "INTERNAL_ERROR",
 ]);
 
@@ -35,6 +36,7 @@ const errorStatuses: Record<GatewayErrorCode, number> = {
   INVALID_TRANSITION: 409,
   EVIDENCE_POLICY_VIOLATION: 422,
   EDITORIAL_LOCK: 409,
+  PUBLICATION_LOCKED: 423,
   INTERNAL_ERROR: 500,
 };
 

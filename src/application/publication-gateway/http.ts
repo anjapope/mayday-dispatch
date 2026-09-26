@@ -5,6 +5,8 @@ import { GatewayError, toGatewayError } from "@/application/publication-gateway/
 import { GatewayErrorResponseSchema } from "@/application/publication-gateway/dto";
 import type { GatewayRequestContext } from "@/application/publication-gateway/service";
 import { resolveAuthenticatedApplicationActor } from "@/security/app-authentication";
+import { resolveEditorialSessionActor } from "@/security/editorial-session";
+import { logOperationalEvent } from "@/observability/operational-log";
 
 function parseDevRoles(headers: Headers): GatewayRole[] {
   const roleHeader = headers.get("x-mayday-roles") ?? headers.get("x-mayday-role");
@@ -72,6 +74,10 @@ export async function actorFromRequest(request: Request): Promise<GatewayActor |
   if (applicationActor) {
     return applicationActor;
   }
+  const sessionActor = resolveEditorialSessionActor(request);
+  if (sessionActor) {
+    return sessionActor;
+  }
   return devHeaderActor(request);
 }
 
@@ -133,6 +139,9 @@ export function gatewayErrorResponse(
       details: gatewayError.details,
     },
   });
+  if (gatewayError.code === "UNAUTHORIZED" || gatewayError.code === "FORBIDDEN") {
+    logOperationalEvent("authentication.rejected", context, gatewayError.code);
+  }
 
   return NextResponse.json(body, {
     status: gatewayError.status,

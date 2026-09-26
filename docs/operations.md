@@ -27,6 +27,14 @@ experimental `node:sqlite` `DatabaseSync` API and targets Node 22.5 or newer.
 The SQLite driver warning is expected; callers use the repository abstraction,
 so a future driver replacement does not change gateway contracts.
 
+Production startup does not run migrations or create a database. Use the
+validated `npm start` launcher after the explicit migration workflow. It
+requires persistent absolute storage, current compatible migrations,
+production-only credentials, a separate session signing key, and a single
+process lock. Production migration, consistent SQLite backup/restore, Docker
+deployment, lockdown, monitoring, and rollback procedures are in
+[production-runbook.md](./production-runbook.md).
+
 Archived publications are retained and excluded from public routes; there is no
 hard-delete publication operation. Withdrawal remains deferred beyond Phase Six.
 # Public-site operation

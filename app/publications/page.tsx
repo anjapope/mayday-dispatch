@@ -1,9 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { browsePublications } from "@/publications/public-query";
+import { canonicalUrl } from "@/publications/metadata";
+
+export const dynamic = "force-dynamic";
 import { PublicationCard } from "./publication-card";
 
-export const metadata: Metadata = { title: "Dispatch | Mayday Dispatch", description: "Browse public research, reports, and dispatches." };
+export const metadata: Metadata = {
+  title: "Dispatch | Mayday Dispatch",
+  description: "Browse public research, reports, and dispatches.",
+  alternates: { canonical: canonicalUrl("/publications") },
+};
 type Props = { searchParams: Promise<Record<string, string | undefined>> };
 export default async function PublicationsPage({ searchParams }: Props) {
   const params = await searchParams;
