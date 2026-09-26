@@ -64,6 +64,7 @@ type PublicationPatch = Partial<
     | "subtitle"
     | "excerpt"
     | "body"
+    | "blocks"
     | "publishedAt"
     | "readingTimeMinutes"
     | "tags"
@@ -217,6 +218,7 @@ export class PublicationGatewayService {
       subtitle: request.subtitle,
       excerpt: request.excerpt,
       body: request.body,
+      blocks: request.blocks ?? [],
       publishedAt: request.publishedAt ?? isoDate(now),
       readingTimeMinutes: request.readingTimeMinutes,
       tags: request.tags,
@@ -319,6 +321,7 @@ export class PublicationGatewayService {
       ...(request.subtitle !== undefined ? { subtitle: request.subtitle } : {}),
       ...(request.excerpt !== undefined ? { excerpt: request.excerpt } : {}),
       ...(request.body !== undefined ? { body: request.body } : {}),
+      ...(request.blocks !== undefined ? { blocks: request.blocks } : {}),
       ...(request.publishedAt !== undefined ? { publishedAt: request.publishedAt } : {}),
       ...(request.readingTimeMinutes !== undefined
         ? { readingTimeMinutes: request.readingTimeMinutes }
@@ -725,6 +728,7 @@ export class PublicationGatewayService {
       title: request.title,
       excerpt: request.excerpt,
       body: request.body,
+      blocks: request.blocks ?? [],
       publishedAt: request.publishedAt ?? existing.publishedAt,
       readingTimeMinutes: request.readingTimeMinutes,
       tags: request.tags,

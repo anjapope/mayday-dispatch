@@ -717,6 +717,7 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
       subtitle: row.subtitle ? String(row.subtitle) : undefined,
       excerpt: String(row.excerpt),
       body: JSON.parse(String(row.body_json)),
+      blocks: row.blocks_json ? JSON.parse(String(row.blocks_json)) : [],
       publishedAt: String(row.published_at),
       readingTimeMinutes: Number(row.reading_time_minutes),
       tags: JSON.parse(String(row.tags_json)),
@@ -781,6 +782,7 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
       publication.subtitle ?? null,
       publication.excerpt,
       JSON.stringify(publication.body),
+      JSON.stringify(publication.blocks),
       publication.publishedAt,
       publication.readingTimeMinutes,
       JSON.stringify(publication.tags),
@@ -796,10 +798,10 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
       this.database
         .prepare(`
           INSERT INTO publications (
-            slug, type, lifecycle_state, visibility, title, subtitle, excerpt, body_json,
+            slug, type, lifecycle_state, visibility, title, subtitle, excerpt, body_json, blocks_json,
             published_at, reading_time_minutes, tags_json, current_version,
             created_by, created_at, verification_status, internal_notes, extensions_json, id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(...values, publication.id);
       this.database
@@ -826,7 +828,7 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
       .prepare(`
         UPDATE publications SET
           slug = ?, type = ?, lifecycle_state = ?, visibility = ?, title = ?,
-          subtitle = ?, excerpt = ?, body_json = ?, published_at = ?, reading_time_minutes = ?,
+          subtitle = ?, excerpt = ?, body_json = ?, blocks_json = ?, published_at = ?, reading_time_minutes = ?,
           tags_json = ?, current_version = ?, created_by = ?, created_at = ?,
           verification_status = ?, internal_notes = ?, extensions_json = ?
         WHERE id = ?

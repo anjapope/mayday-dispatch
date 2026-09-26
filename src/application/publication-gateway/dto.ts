@@ -8,6 +8,7 @@ import {
   PublicationVisibilitySchema,
   RevisionMetadataSchema,
 } from "@/domain/publication";
+import { PublicationContentBlocksSchema } from "@/domain/content-blocks";
 import { GatewayErrorCodeSchema } from "@/application/publication-gateway/errors";
 
 const SlugSchema = z
@@ -21,6 +22,7 @@ const DraftContentSchema = z.object({
   subtitle: z.string().trim().min(1).optional(),
   excerpt: z.string().trim().min(1),
   body: z.array(z.string().trim().min(1)).min(1),
+  blocks: PublicationContentBlocksSchema.optional(),
   publishedAt: z.string().date().optional(),
   readingTimeMinutes: z.number().int().positive(),
   tags: z.array(z.string().trim().min(1)).default([]),
@@ -169,6 +171,7 @@ export const PublicPublicationResponseSchema = z
         subtitle: z.string().optional(),
         excerpt: z.string(),
         body: z.array(z.string()),
+        blocks: PublicationContentBlocksSchema,
         publishedAt: z.string().date(),
         readingTimeMinutes: z.number().int().positive(),
         tags: z.array(z.string()),

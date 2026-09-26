@@ -2,6 +2,7 @@ import type { PublicPublication } from "@/domain/publication";
 import Link from "next/link";
 import { PublicationCard } from "./publication-card";
 import { CartographicField } from "../cartographic-field";
+import { PublicationBlocks } from "./blocks/publication-blocks";
 
 export function PublicationArticle({ publication, related = [] }: { publication: PublicPublication; related?: PublicPublication[] }) {
   return (
@@ -35,7 +36,9 @@ export function PublicationArticle({ publication, related = [] }: { publication:
         </dl>
       </header>
       <section className={`body-copy ${publication.type === "short-dispatch" ? "body-copy--dispatch" : ""}`} aria-label="Publication body">
-        {publication.body.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+        {publication.blocks?.length
+          ? <PublicationBlocks blocks={publication.blocks} evidence={publication.evidence} />
+          : publication.body.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
       </section>
       {publication.title.includes("Strait") && <section className="supporting-section geographic-context" aria-labelledby="geographic-context-heading"><h2 id="geographic-context-heading">Geographic context</h2><CartographicField variant="strait" /></section>}
       {related.length > 0 && (

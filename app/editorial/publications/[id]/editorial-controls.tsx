@@ -10,6 +10,7 @@ type Props = {
   subtitle?: string;
   excerpt: string;
   body: string[];
+  blocks: unknown[];
   tags: string[];
   visibility: string;
   sources: unknown[];
@@ -61,10 +62,12 @@ export function EditorialControls(props: Props) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     let sources: unknown;
+    let blocks: unknown;
     try {
       sources = JSON.parse(String(form.get("sources")));
+      blocks = JSON.parse(String(form.get("blocks")));
     } catch {
-      setMessage("VALIDATION_FAILED: Citations must be valid JSON.");
+      setMessage("VALIDATION_FAILED: Citations and structured blocks must be valid JSON.");
       return;
     }
     await request(`/api/editorial/publications/${props.publicationId}`, "PATCH", {
@@ -74,6 +77,7 @@ export function EditorialControls(props: Props) {
       subtitle: form.get("subtitle") || undefined,
       excerpt: form.get("excerpt"),
       body: String(form.get("body")).split("\n").map((paragraph) => paragraph.trim()).filter(Boolean),
+      blocks,
       tags: String(form.get("tags")).split(",").map((tag) => tag.trim()).filter(Boolean),
       visibility: form.get("visibility"),
       sources,
@@ -91,6 +95,8 @@ export function EditorialControls(props: Props) {
         <label>Subtitle<input name="subtitle" defaultValue={props.subtitle} /></label>
         <label>Summary<textarea name="excerpt" defaultValue={props.excerpt} required /></label>
         <label>Body paragraphs<textarea name="body" defaultValue={props.body.join("\n")} required /></label>
+        <label>Structured blocks (JSON, ordered)<textarea name="blocks" defaultValue={JSON.stringify(props.blocks, null, 2)} aria-describedby="blocks-help" required /></label>
+        <p id="blocks-help">Each block requires a type and stable UUID. Validation rejects unsafe URLs, malformed tables, inaccessible images, and invalid map coordinates.</p>
         <label>Tags (comma-separated)<input name="tags" defaultValue={props.tags.join(", ")} /></label>
         <label>Visibility<select name="visibility" defaultValue={props.visibility}><option>private</option><option>internal</option><option>citation-only</option><option>public</option></select></label>
         <label>Public methodology<textarea name="methodology" defaultValue={props.methodology} /></label>

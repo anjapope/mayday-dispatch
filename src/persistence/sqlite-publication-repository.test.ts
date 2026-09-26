@@ -104,7 +104,7 @@ describe("SqlitePublicationRepository", () => {
     );
     expect(
       repository.database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get(),
-    ).toMatchObject({ count: 5 });
+    ).toMatchObject({ count: 6 });
     repository.close();
   });
 
@@ -117,7 +117,9 @@ describe("SqlitePublicationRepository", () => {
       evidenceRegistry: firstRepository,
       now: () => new Date("2026-09-22T19:30:10.431Z"),
     });
-    const created = await firstService.createDraft(draft(), research, context);
+    const created = await firstService.createDraft(draft({
+      blocks: [{ id: "90909090-9090-4090-8090-909090909090", type: "prose", text: "A persisted structured block." }],
+    }), research, context);
     await firstService.transition(
       created.publication.id,
       { to: "review", expectedVersion: 1 },
@@ -139,6 +141,9 @@ describe("SqlitePublicationRepository", () => {
       id: evidence.id,
       checksum: evidence.checksum,
     });
+    expect(loaded?.blocks).toEqual([
+      { id: "90909090-9090-4090-8090-909090909090", type: "prose", text: "A persisted structured block." },
+    ]);
     expect(
       restarted.database
         .prepare("SELECT COUNT(*) AS count FROM revisions WHERE publication_id = ?")

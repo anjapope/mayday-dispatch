@@ -12,6 +12,13 @@ const academicResearchArticle = {
     "Heat emergencies are often measured by their daytime maximum. That convention misses the accumulated burden created when overnight temperatures remain elevated and recovery becomes impossible.",
     "The evidence reviewed here supports treating consecutive warm nights as an operational trigger. The practical implication is simple: public cooling, welfare checks, and transit contingency plans should begin before the daily peak.",
   ],
+  blocks: [
+    { id: "10000000-0000-4000-8000-000000000001", type: "heading", level: 2, text: "Overnight exposure" },
+    { id: "10000000-0000-4000-8000-000000000002", type: "prose", text: "Consecutive warm nights reduce the recovery time available to households and emergency services." },
+    { id: "10000000-0000-4000-8000-000000000003", type: "figure", url: "https://example.org/fixtures/overnight-heat-window.png", alt: "A development sample figure comparing overnight temperatures and response windows.", caption: "Development sample of the overnight heat response window.", source: "Mayday development fixture", figureNumber: 1 },
+    { id: "10000000-0000-4000-8000-000000000004", type: "table", caption: "Development sample of response triggers.", columns: [{ key: "indicator", label: "Indicator" }, { key: "response", label: "Response" }], rows: [["Warm nights", "Open cooling sites"], ["Consecutive alerts", "Begin welfare checks"]], evidenceId: "2fa02038-9a44-4934-b5b0-fce2ee0ec5e7", tableNumber: 1 },
+    { id: "10000000-0000-4000-8000-000000000005", type: "evidence-reference", evidenceId: "bf4582f8-a5ca-45f3-a582-7f1aa4f5eab5", label: "Mortality review" },
+  ],
   publishedAt: "2026-07-14",
   readingTimeMinutes: 8,
   tags: ["climate", "public-health", "research"],
@@ -80,6 +87,12 @@ const overwatchOsintReport = {
   body: [
     "Commercial vessel position reports show a measurable shift toward longer transit paths during the last seventy-two hours. The pattern is consistent across two independent public feeds, but intent cannot be inferred from routing data alone.",
     "Operators should plan for modest delivery variance and continue to monitor port notices. This dispatch will be updated if official restrictions or corroborating statements emerge.",
+  ],
+  blocks: [
+    { id: "20000000-0000-4000-8000-000000000001", type: "prose", text: "This development sample summarizes public routing observations without inferring intent." },
+    { id: "20000000-0000-4000-8000-000000000002", type: "map", title: "Eastern strait routing context", caption: "Development sample geographic context for the routing watch.", description: "A public-reference map marking an eastern strait observation point and the associated monitored route.", features: [{ kind: "point", latitude: 24, longitude: 56, label: "Eastern Strait" }, { kind: "line", label: "Observed route", coordinates: [{ latitude: 24, longitude: 52 }, { latitude: 25, longitude: 56 }, { latitude: 26, longitude: 60 }] }], evidenceId: "8e1b2b86-28de-4ff0-a558-e00f2e8aaf75" },
+    { id: "20000000-0000-4000-8000-000000000003", type: "timeline", title: "Reporting window", entries: [{ date: "2026-08-01", title: "Initial observation", description: "Public routing data shows a change in transit paths.", evidenceId: "8e1b2b86-28de-4ff0-a558-e00f2e8aaf75" }, { date: "2026-08-03", title: "Situation report", description: "Dispatch records the observation with a stated caveat." }] },
+    { id: "20000000-0000-4000-8000-000000000004", type: "evidence-reference", evidenceId: "8e1b2b86-28de-4ff0-a558-e00f2e8aaf75", label: "Public vessel-position dashboard" },
   ],
   publishedAt: "2026-08-03",
   readingTimeMinutes: 5,
@@ -181,8 +194,38 @@ const shortDispatch = {
   ],
 };
 
+const forecastBrief = {
+  id: "a3fce2f7-cd39-4bba-bb7e-4c79e7d2667d",
+  slug: "heat-service-outlook",
+  type: "forecast-brief",
+  lifecycleState: "published",
+  visibility: "public",
+  title: "Heat Service Outlook",
+  excerpt: "A development forecast fixture describing conditions that could increase municipal heat-service demand.",
+  body: ["This development fixture demonstrates structured forecast presentation. It does not make a real-world prediction."],
+  blocks: [
+    { id: "30000000-0000-4000-8000-000000000001", type: "prose", text: "The following indicators are illustrative development content and should not be treated as an operational forecast." },
+    { id: "30000000-0000-4000-8000-000000000002", type: "table", caption: "Illustrative forecast indicators.", columns: [{ key: "indicator", label: "Indicator" }, { key: "implication", label: "Potential implication" }], rows: [["Persistent warm nights", "Higher cooling-service demand"], ["Transit disruption", "Reduced access to cooling sites"]], tableNumber: 1 },
+    { id: "30000000-0000-4000-8000-000000000003", type: "timeline", title: "Outlook period", entries: [{ date: "2026-09", title: "Seasonal monitoring", description: "Track public heat and service indicators." }, { date: "2026-10", title: "Review", description: "Reassess conditions against documented assumptions." }] },
+    { id: "30000000-0000-4000-8000-000000000004", type: "dataset-reference", title: "Municipal heat indicators", description: "Development reference to a public dataset used for indicator monitoring.", source: "Mayday development fixture", url: "https://example.org/datasets/municipal-heat-indicators.csv", format: "CSV", coverage: "Monthly" },
+  ],
+  publishedAt: "2026-09-15",
+  readingTimeMinutes: 4,
+  tags: ["forecast", "climate", "development-fixture"],
+  revision: { version: 1, updatedAt: "2026-09-15T09:00:00+00:00", summary: "Initial development fixture." },
+  provenance: {
+    origin: { kind: "original-reporting", label: "Mayday Forecast Desk", originatingApplication: "Mayday Dispatch", originatingProject: "Development fixtures", stableObjectId: "forecast:heat:fixture:1" },
+    createdBy: "Mayday Forecast Desk",
+    createdAt: "2026-09-15T09:00:00+00:00",
+    verificationStatus: "unverified",
+  },
+  evidence: [],
+  sources: [{ id: "31bc1b3c-daeb-43f0-a034-8d9c38ea97a7", title: "Development fixture methodology", authors: ["Mayday Forecast Desk"], publisher: "Mayday Information Systems" }],
+};
+
 export const publications: Publication[] = [
   academicResearchArticle,
   overwatchOsintReport,
   shortDispatch,
+  forecastBrief,
 ].map((fixture) => PublicationSchema.parse(fixture));

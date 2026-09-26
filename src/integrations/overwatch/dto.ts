@@ -5,6 +5,7 @@ import {
   type GatewayPublicationResponse,
 } from "@/application/publication-gateway/dto";
 import { LifecycleStateSchema } from "@/domain/publication";
+import { PublicationContentBlocksSchema } from "@/domain/content-blocks";
 
 export const OverwatchAssessmentMetadataSchema = z
   .object({
@@ -30,6 +31,7 @@ export const OverwatchPublicationInputSchema = z
     title: z.string().trim().min(1),
     summary: z.string().trim().min(1),
     body: z.array(z.string().trim().min(1)).min(1),
+    blocks: PublicationContentBlocksSchema.optional(),
     publicationType: z.string().trim().min(1),
     slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
     tags: z.array(z.string().trim().min(1)).default([]),

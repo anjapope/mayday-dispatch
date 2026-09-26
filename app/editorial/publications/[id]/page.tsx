@@ -56,6 +56,7 @@ export default async function EditorialPublicationPage({ params }: Props) {
         subtitle={publication.subtitle}
         excerpt={publication.excerpt}
         body={publication.body}
+        blocks={publication.blocks}
         tags={publication.tags}
         visibility={publication.visibility}
         sources={publication.sources}
@@ -67,6 +68,13 @@ export default async function EditorialPublicationPage({ params }: Props) {
           : undefined}
       />
       <EvidenceAssociation publicationId={publication.id} version={publication.revision.version} />
+      <section className="editorial-panel" aria-labelledby="structured-content-heading">
+        <h2 id="structured-content-heading">Structured content</h2>
+        <p>{publication.blocks.length} ordered block{publication.blocks.length === 1 ? "" : "s"}.</p>
+        <ol className="source-list">
+          {publication.blocks.map((block, index) => <li key={block.id}>{index + 1}. <strong>{block.type}</strong> · {block.id}</li>)}
+        </ol>
+      </section>
       <section className="editorial-panel" aria-labelledby="readiness-heading">
         <h2 id="readiness-heading">Readiness</h2>
         <p>{readiness.ready ? "No blocking findings." : "Publishing is blocked until errors are resolved."}</p>

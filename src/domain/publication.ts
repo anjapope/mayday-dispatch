@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  PublicationContentBlocksSchema,
+  sanitizePublicBlocks,
+  type PublicationContentBlock,
+} from "@/domain/content-blocks";
 
 export const PublicationTypeSchema = z
   .string()
@@ -178,6 +183,7 @@ export const PublicationSchema = z
     subtitle: z.string().trim().min(1).optional(),
     excerpt: z.string().trim().min(1),
     body: z.array(z.string().trim().min(1)).min(1),
+    blocks: PublicationContentBlocksSchema.default([]),
     publishedAt: z.string().date(),
     readingTimeMinutes: z.number().int().positive(),
     tags: z.array(z.string().trim().min(1)).default([]),
@@ -247,6 +253,7 @@ export type PublicPublication = Pick<
   | "revision"
   | "sources"
 > & {
+  blocks?: PublicationContentBlock[];
   evidence: PublicEvidence[];
   methodology?: string;
   caveat?: string;
@@ -272,6 +279,14 @@ export function toPublicPublication(publication: Publication): PublicPublication
     subtitle: publication.subtitle,
     excerpt: publication.excerpt,
     body: publication.body,
+    blocks: sanitizePublicBlocks(
+      publication.blocks,
+      new Set(
+        publication.evidence
+          .filter((evidence) => evidence.visibility === "public" || evidence.visibility === "citation-only")
+          .map((evidence) => evidence.id),
+      ),
+    ),
     publishedAt: publication.publishedAt,
     readingTimeMinutes: publication.readingTimeMinutes,
     tags: publication.tags,

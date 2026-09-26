@@ -7,11 +7,12 @@ import {
   canTransitionLifecycle,
   toPublicPublication,
 } from "@/domain/publication";
+import { PublicationContentBlocksSchema } from "@/domain/content-blocks";
 import { publications } from "@/publications/fixtures";
 
 describe("PublicationSchema", () => {
   it("accepts every complete fixture", () => {
-    expect(publications).toHaveLength(3);
+    expect(publications).toHaveLength(4);
     for (const publication of publications) {
       expect(PublicationSchema.safeParse(publication).success).toBe(true);
     }
@@ -39,6 +40,20 @@ describe("PublicationSchema", () => {
     const invalid = { ...publications[0], lifecycleState: "released" };
 
     expect(PublicationSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it("validates accessible visual blocks, table shapes, and map coordinates", () => {
+    expect(PublicationContentBlocksSchema.safeParse([
+      { id: "50000000-0000-4000-8000-000000000001", type: "image", url: "https://example.org/image.png", alt: "Development image", caption: "Caption" },
+      { id: "50000000-0000-4000-8000-000000000002", type: "table", caption: "Table", columns: [{ key: "a", label: "A" }], rows: [["value"]] },
+      { id: "50000000-0000-4000-8000-000000000003", type: "map", title: "Map", caption: "Caption", description: "Text fallback.", features: [{ kind: "point", latitude: 24, longitude: 56, label: "Point" }] },
+    ]).success).toBe(true);
+    expect(PublicationContentBlocksSchema.safeParse([
+      { id: "50000000-0000-4000-8000-000000000001", type: "image", url: "file:///private/image.png", caption: "Caption" },
+    ]).success).toBe(false);
+    expect(PublicationContentBlocksSchema.safeParse([
+      { id: "50000000-0000-4000-8000-000000000001", type: "map", title: "Map", caption: "Caption", description: "Text fallback.", features: [{ kind: "point", latitude: 100, longitude: 56, label: "Point" }] },
+    ]).success).toBe(false);
   });
 });
 
@@ -106,6 +121,19 @@ describe("evidence visibility", () => {
     expect(projected.methodology).toBe("Public methodology.");
     expect(projected.notice?.kind).toBe("correction");
     expect(JSON.stringify(projected)).not.toContain("confidenceRationale");
+  });
+
+  it("removes restricted evidence-reference blocks from public output", () => {
+    const publication = {
+      ...publications[1],
+      blocks: [
+        { id: "60000000-0000-4000-8000-000000000001", type: "evidence-reference" as const, evidenceId: "8e1b2b86-28de-4ff0-a558-e00f2e8aaf75" },
+        { id: "60000000-0000-4000-8000-000000000002", type: "evidence-reference" as const, evidenceId: "4cfa7a2d-28a2-4bb9-9772-b5dcfb91150b" },
+      ],
+    };
+    const projected = toPublicPublication(publication);
+    expect(projected.blocks).toHaveLength(1);
+    expect(JSON.stringify(projected)).not.toContain("4cfa7a2d-28a2-4bb9-9772-b5dcfb91150b");
   });
 });
 

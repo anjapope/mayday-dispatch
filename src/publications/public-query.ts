@@ -2,6 +2,7 @@ import { toPublicPublication, type PublicPublication } from "@/domain/publicatio
 import { publications as developmentFixtures } from "@/publications/fixtures";
 import { publicSectionFor, type PublicSection } from "@/publications/public-section";
 import { listPublications } from "@/publications/repository";
+import { searchableBlockText } from "@/domain/content-blocks";
 
 export { publicSectionFor, type PublicSection } from "@/publications/public-section";
 
@@ -29,7 +30,7 @@ async function publicRecords(): Promise<PublicPublication[]> {
 export async function browsePublications(filters: PublicBrowseFilters = {}): Promise<PublicPublication[]> {
   const query = filters.query?.trim().toLowerCase();
   return newestFirst(await publicRecords()).filter((publication) => {
-    const searchable = [publication.title, publication.subtitle, publication.excerpt, ...publication.tags, ...publication.body]
+    const searchable = [publication.title, publication.subtitle, publication.excerpt, ...publication.tags, ...publication.body, ...searchableBlockText(publication.blocks ?? [])]
       .filter((value): value is string => Boolean(value)).join(" ").toLowerCase();
     return (!filters.type || publication.type === filters.type) &&
       (!filters.tag || publication.tags.includes(filters.tag)) &&
