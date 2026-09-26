@@ -32,3 +32,8 @@ is only for retrying the exact same request.
 The adapter is contract-tested inside Dispatch with an injected `fetch`.
 No Research Studio worker, deployment, background synchronization, or remote
 repository change is implemented here.
+
+Once an item enters review, ready, published, updated, or archived state,
+upstream synchronization is rejected with `EDITORIAL_LOCK`. Publication,
+correction, archive, and substantive-update operations are Dispatch editorial
+operations and cannot be performed by Research Studio.

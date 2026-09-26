@@ -11,6 +11,11 @@
 | `POST /api/publications/[id]/evidence` | Associate a registered evidence UUID |
 | `POST /api/publications/[id]/transition` | Request a version-checked lifecycle transition |
 | `GET /api/public/publications/[slug]` | Read the safe public projection |
+| `GET /api/editorial/publications` | Authenticated editorial queue with lifecycle/source/type filters |
+| `GET /api/editorial/publications/[id]` | Authenticated editorial publication detail |
+| `PATCH /api/editorial/publications/[id]` | Version-checked editorial content, correction, or update mutation |
+| `POST /api/editorial/publications/[id]/transition` | Version-checked editorial lifecycle operation |
+| `GET /api/editorial/publications/[id]/preview` | Authenticated public-safe preview |
 
 All private mutations accept `x-request-id` and `x-correlation-id`; Dispatch
 generates missing values. The correlation ID is returned in successful internal
@@ -55,6 +60,11 @@ identity and roles come entirely from `MAYDAY_APPLICATION_CREDENTIALS`.
 `MAYDAY_TRUST_DEV_HEADERS=true`; production-shaped clients do not use it.
 Role and resource authorization remains centralized in
 `PublicationAuthorizationPolicy` and must not move into route handlers.
+
+Editorial edits require `expectedVersion` and preserve immutable origin identity.
+Revision types distinguish upstream synchronization, editorial changes, lifecycle
+transitions, corrections, substantive updates, and archives. Only publisher/admin actors
+can publish; external applications cannot transition or publish editorial work.
 
 External applications can synchronize their own origin only while it remains
 in `draft`. Any sync/update attempted after review begins returns HTTP 409

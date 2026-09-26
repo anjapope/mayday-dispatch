@@ -55,6 +55,7 @@ export const PublicationVisibilitySchema = EvidenceVisibilitySchema;
 export const CitationSchema = z.object({
   id: z.string().uuid(),
   title: z.string().trim().min(1),
+  subtitle: z.string().trim().min(1).optional(),
   authors: z.array(z.string().trim().min(1)).min(1),
   publisher: z.string().trim().min(1).optional(),
   publishedAt: z.string().date().optional(),
@@ -148,6 +149,14 @@ export const RevisionMetadataSchema = z.object({
   updatedAt: z.string().datetime({ offset: true }),
   summary: z.string().trim().min(1),
   previousVersion: z.number().int().positive().optional(),
+  revisionType: z.enum([
+    "upstream-synchronization",
+    "editorial",
+    "lifecycle-transition",
+    "correction",
+    "substantive-update",
+    "archive",
+  ]).default("editorial"),
 });
 
 export const PublicationSchema = z
@@ -160,6 +169,7 @@ export const PublicationSchema = z
     lifecycleState: LifecycleStateSchema,
     visibility: PublicationVisibilitySchema,
     title: z.string().trim().min(1),
+    subtitle: z.string().trim().min(1).optional(),
     excerpt: z.string().trim().min(1),
     body: z.array(z.string().trim().min(1)).min(1),
     publishedAt: z.string().date(),
@@ -205,6 +215,16 @@ export type PublicEvidence = {
   citation?: z.infer<typeof CitationSchema>;
 };
 
+export const PublicNoticeSchema = z.object({
+  kind: z.enum(["correction", "update"]),
+  note: z.string().trim().min(1),
+  timestamp: z.string().datetime({ offset: true }),
+  version: z.number().int().positive(),
+  explanation: z.string().trim().min(1).optional(),
+});
+
+export type PublicNotice = z.infer<typeof PublicNoticeSchema>;
+
 export type PublicPublication = Pick<
   Publication,
   | "id"
@@ -212,6 +232,7 @@ export type PublicPublication = Pick<
   | "type"
   | "lifecycleState"
   | "title"
+  | "subtitle"
   | "excerpt"
   | "body"
   | "publishedAt"
@@ -221,6 +242,10 @@ export type PublicPublication = Pick<
   | "sources"
 > & {
   evidence: PublicEvidence[];
+  methodology?: string;
+  caveat?: string;
+  notice?: PublicNotice;
+  relatedPublicationIds?: string[];
 };
 
 export function toPublicPublication(publication: Publication): PublicPublication {
@@ -236,6 +261,7 @@ export function toPublicPublication(publication: Publication): PublicPublication
     type: publication.type,
     lifecycleState: publication.lifecycleState,
     title: publication.title,
+    subtitle: publication.subtitle,
     excerpt: publication.excerpt,
     body: publication.body,
     publishedAt: publication.publishedAt,
@@ -243,6 +269,24 @@ export function toPublicPublication(publication: Publication): PublicPublication
     tags: publication.tags,
     revision: publication.revision,
     sources: publication.sources,
+    methodology:
+      typeof publication.extensions.methodology === "string"
+        ? publication.extensions.methodology
+        : undefined,
+    caveat:
+      typeof publication.extensions.caveat === "string"
+        ? publication.extensions.caveat
+        : undefined,
+    notice:
+      publication.extensions.publicNotice &&
+      typeof publication.extensions.publicNotice === "object"
+        ? PublicNoticeSchema.parse(publication.extensions.publicNotice)
+        : undefined,
+    relatedPublicationIds: Array.isArray(publication.extensions.relatedPublicationIds)
+      ? publication.extensions.relatedPublicationIds.filter(
+          (value): value is string => typeof value === "string",
+        )
+      : undefined,
     evidence: publication.evidence
       .filter((evidence) => evidence.visibility === "public" || evidence.visibility === "citation-only")
       .map(({ id, title, description, url, citation }) => ({

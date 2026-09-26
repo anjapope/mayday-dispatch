@@ -20,3 +20,6 @@ Run `npm run db:migrate` before application startup. This phase uses Node's
 experimental `node:sqlite` `DatabaseSync` API and targets Node 22.5 or newer.
 The SQLite driver warning is expected; callers use the repository abstraction,
 so a future driver replacement does not change gateway contracts.
+
+Archived publications are retained and excluded from public routes; there is no
+hard-delete publication operation. Withdrawal remains deferred beyond Phase Six.

@@ -37,6 +37,21 @@ export type SavePublicationOptions = {
   idempotency?: Omit<IdempotencyRecord, "publicationId" | "resultingVersion" | "response">;
 };
 
+export type RevisionHistoryEntry = Publication["revision"] & {
+  publicationId: string;
+  actorSubject?: string;
+  actorApplication?: string;
+  lifecycleState: Publication["lifecycleState"];
+};
+
+export type LifecycleHistoryEntry = {
+  publicationId: string;
+  fromState?: Publication["lifecycleState"];
+  toState: Publication["lifecycleState"];
+  version: number;
+  changedAt: string;
+};
+
 export class RepositoryConcurrencyError extends Error {
   constructor(readonly expectedVersion: number, readonly actualVersion: number | undefined) {
     super("Publication version does not match the persisted version.");
@@ -68,6 +83,8 @@ export interface PublicationRepository {
     key: string,
   ): Promise<IdempotencyRecord | undefined>;
   save(publication: Publication, options: SavePublicationOptions): Promise<Publication>;
+  listRevisionHistory?(publicationId: string): Promise<RevisionHistoryEntry[]>;
+  listLifecycleHistory?(publicationId: string): Promise<LifecycleHistoryEntry[]>;
   checkHealth?(): Promise<RepositoryHealth>;
 }
 
@@ -353,7 +370,7 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
 
       this.writePublication(parsed, current === undefined);
       this.writeRelations(parsed);
-      this.writeRevision(parsed);
+      this.writeRevision(parsed, audit);
 
       if (!current || String(current.lifecycle_state) !== parsed.lifecycleState) {
         this.database
@@ -410,7 +427,7 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
       .prepare(`
         SELECT p.*, o.kind, o.label, o.url AS origin_url, o.originating_application,
           o.originating_project, o.stable_object_id, o.last_synchronized_at,
-          r.previous_version, r.updated_at, r.summary
+          r.previous_version, r.updated_at, r.summary, r.revision_type
         FROM publications p
         JOIN origins o ON o.publication_id = p.id
         JOIN revisions r ON r.publication_id = p.id AND r.version = p.current_version
@@ -439,6 +456,7 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
       lifecycleState: String(row.lifecycle_state),
       visibility: String(row.visibility),
       title: String(row.title),
+      subtitle: row.subtitle ? String(row.subtitle) : undefined,
       excerpt: String(row.excerpt),
       body: JSON.parse(String(row.body_json)),
       publishedAt: String(row.published_at),
@@ -449,6 +467,7 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
         previousVersion: row.previous_version === null ? undefined : Number(row.previous_version),
         updatedAt: String(row.updated_at),
         summary: String(row.summary),
+        revisionType: String(row.revision_type ?? "editorial") as Publication["revision"]["revisionType"],
       },
       provenance: {
         origin: {
@@ -495,6 +514,7 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
       publication.lifecycleState,
       publication.visibility,
       publication.title,
+      publication.subtitle ?? null,
       publication.excerpt,
       JSON.stringify(publication.body),
       publication.publishedAt,
@@ -512,10 +532,10 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
       this.database
         .prepare(`
           INSERT INTO publications (
-            slug, type, lifecycle_state, visibility, title, excerpt, body_json,
+            slug, type, lifecycle_state, visibility, title, subtitle, excerpt, body_json,
             published_at, reading_time_minutes, tags_json, current_version,
             created_by, created_at, verification_status, internal_notes, extensions_json, id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(...values, publication.id);
       this.database
@@ -542,7 +562,7 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
       .prepare(`
         UPDATE publications SET
           slug = ?, type = ?, lifecycle_state = ?, visibility = ?, title = ?,
-          excerpt = ?, body_json = ?, published_at = ?, reading_time_minutes = ?,
+          subtitle = ?, excerpt = ?, body_json = ?, published_at = ?, reading_time_minutes = ?,
           tags_json = ?, current_version = ?, created_by = ?, created_at = ?,
           verification_status = ?, internal_notes = ?, extensions_json = ?
         WHERE id = ?
@@ -594,12 +614,13 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
     }
   }
 
-  private writeRevision(publication: Publication): void {
+  private writeRevision(publication: Publication, audit: AuditEvent): void {
     this.database
       .prepare(`
         INSERT INTO revisions (
-          publication_id, version, previous_version, updated_at, summary, snapshot_json
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          publication_id, version, previous_version, updated_at, summary, snapshot_json,
+          revision_type, actor_subject, actor_application, lifecycle_state
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         publication.id,
@@ -608,6 +629,10 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
         publication.revision.updatedAt,
         publication.revision.summary,
         JSON.stringify(publication),
+        publication.revision.revisionType,
+        audit.actor.subjectId,
+        audit.actor.application ?? null,
+        publication.lifecycleState,
       );
   }
 
@@ -618,8 +643,8 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
           INSERT INTO audit_events (
             id, timestamp, actor_subject, actor_roles_json, actor_application, action,
             publication_id, correlation_id, request_id, previous_version,
-            resulting_version, outcome, reason, error_code
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            resulting_version, outcome, reason, error_code, revision_type
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
           event.id,
@@ -636,10 +661,48 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
           event.outcome,
           event.reason ?? null,
           event.errorCode ?? null,
+          event.revisionType ?? null,
         );
     } catch (error) {
       throw new RepositoryPersistenceError("audit", { cause: error });
     }
+  }
+
+  async listRevisionHistory(publicationId: string): Promise<RevisionHistoryEntry[]> {
+      return this.database
+        .prepare(`
+          SELECT publication_id, version, previous_version, updated_at, summary,
+            revision_type, actor_subject, actor_application, lifecycle_state
+          FROM revisions WHERE publication_id = ? ORDER BY version
+        `)
+        .all(publicationId)
+        .map((row) => ({
+          publicationId: String(row.publication_id),
+          version: Number(row.version),
+          previousVersion: row.previous_version === null ? undefined : Number(row.previous_version),
+          updatedAt: String(row.updated_at),
+          summary: String(row.summary),
+          revisionType: String(row.revision_type) as Publication["revision"]["revisionType"],
+          actorSubject: row.actor_subject ? String(row.actor_subject) : undefined,
+          actorApplication: row.actor_application ? String(row.actor_application) : undefined,
+          lifecycleState: String(row.lifecycle_state) as Publication["lifecycleState"],
+        }));
+  }
+
+  async listLifecycleHistory(publicationId: string): Promise<LifecycleHistoryEntry[]> {
+    return this.database
+      .prepare(`
+        SELECT publication_id, from_state, to_state, version, changed_at
+        FROM lifecycle_history WHERE publication_id = ? ORDER BY version
+      `)
+      .all(publicationId)
+      .map((row) => ({
+        publicationId: String(row.publication_id),
+        fromState: row.from_state ? String(row.from_state) as Publication["lifecycleState"] : undefined,
+        toState: String(row.to_state) as Publication["lifecycleState"],
+        version: Number(row.version),
+        changedAt: String(row.changed_at),
+      }));
   }
 
   private upsertCitation(citation: Publication["sources"][number]): void {
@@ -697,7 +760,7 @@ function isPubliclyReadable(publication: Publication): boolean {
 
 export function getPublicationRepository(): PublicationRepository {
   singletonRepository ??= new SqlitePublicationRepository(defaultDatabasePath, {
-    migrate: false,
+    migrate: true,
   });
   return singletonRepository;
 }

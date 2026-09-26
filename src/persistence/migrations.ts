@@ -45,21 +45,17 @@ export function runMigrations(
     )
   `);
 
-  const applied = new Set(
-    database
-      .prepare("SELECT name FROM schema_migrations")
-      .all()
-      .map((row) => String(row.name)),
-  );
-
   for (const name of readdirSync(migrationsDirectory).filter((file) => file.endsWith(".sql")).sort()) {
-    if (applied.has(name)) {
-      continue;
-    }
-
     const sql = readFileSync(join(migrationsDirectory, name), "utf8");
     database.exec("BEGIN IMMEDIATE");
     try {
+      const alreadyApplied = database
+        .prepare("SELECT 1 FROM schema_migrations WHERE name = ?")
+        .get(name);
+      if (alreadyApplied) {
+        database.exec("COMMIT");
+        continue;
+      }
       database.exec(sql);
       database
         .prepare("INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)")

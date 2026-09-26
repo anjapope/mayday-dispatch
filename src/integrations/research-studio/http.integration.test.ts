@@ -73,6 +73,10 @@ type Routes = {
   registerEvidence: (request: Request) => Promise<Response>;
   getEvidence: (request: Request, context: { params: Promise<{ id: string }> }) => Promise<Response>;
   publicPublication: (request: Request, context: { params: Promise<{ slug: string }> }) => Promise<Response>;
+  editorialList: (request: Request) => Promise<Response>;
+  editorialPublication: (request: Request, context: { params: Promise<{ id: string }> }) => Promise<Response>;
+  editorialPreview: (request: Request, context: { params: Promise<{ id: string }> }) => Promise<Response>;
+  editorialTransition: (request: Request, context: { params: Promise<{ id: string }> }) => Promise<Response>;
 };
 
 let routes: Routes;
@@ -88,9 +92,27 @@ function routeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Respo
   const publicationMatch = url.pathname.match(/^\/api\/publications\/([^/]+)$/);
   const evidenceMatch = url.pathname.match(/^\/api\/evidence\/([^/]+)$/);
   const publicMatch = url.pathname.match(/^\/api\/public\/publications\/([^/]+)$/);
+  const editorialMatch = url.pathname.match(/^\/api\/editorial\/publications\/([^/]+)$/);
+  const editorialPreviewMatch = url.pathname.match(/^\/api\/editorial\/publications\/([^/]+)\/preview$/);
+  const editorialTransitionMatch = url.pathname.match(/^\/api\/editorial\/publications\/([^/]+)\/transition$/);
 
   if (url.pathname === "/api/publications" && request.method === "POST") {
     return routes.create(request);
+  }
+  if (url.pathname === "/api/editorial/publications" && request.method === "GET") {
+    return routes.editorialList(request);
+  }
+  if (editorialPreviewMatch && request.method === "GET") {
+    return routes.editorialPreview(request, { params: Promise.resolve({ id: editorialPreviewMatch[1] }) });
+  }
+  if (editorialTransitionMatch && request.method === "POST") {
+    return routes.editorialTransition(request, { params: Promise.resolve({ id: editorialTransitionMatch[1] }) });
+  }
+  if (editorialMatch && request.method === "GET") {
+    return routes.editorialPublication(request, { params: Promise.resolve({ id: editorialMatch[1] }) });
+  }
+  if (editorialMatch && request.method === "PATCH") {
+    return routes.editorialPublication(request, { params: Promise.resolve({ id: editorialMatch[1] }) });
   }
   if (publicationMatch && request.method === "GET") {
     return routes.retrieve(request, { params: Promise.resolve({ id: publicationMatch[1] }) });
@@ -164,6 +186,10 @@ beforeAll(async () => {
   const evidenceRoutes = await import("../../../app/api/evidence/route");
   const evidenceById = await import("../../../app/api/evidence/[id]/route");
   const publicPublication = await import("../../../app/api/public/publications/[slug]/route");
+  const editorialPublications = await import("../../../app/api/editorial/publications/route");
+  const editorialPublication = await import("../../../app/api/editorial/publications/[id]/route");
+  const editorialPreview = await import("../../../app/api/editorial/publications/[id]/preview/route");
+  const editorialTransition = await import("../../../app/api/editorial/publications/[id]/transition/route");
   routes = {
     create: publications.POST,
     retrieve: publication.GET,
@@ -173,6 +199,10 @@ beforeAll(async () => {
     registerEvidence: evidenceRoutes.POST,
     getEvidence: evidenceById.GET,
     publicPublication: publicPublication.GET,
+    editorialList: editorialPublications.GET,
+    editorialPublication: editorialPublication.GET,
+    editorialPreview: editorialPreview.GET,
+    editorialTransition: editorialTransition.POST,
   };
 });
 
@@ -686,5 +716,91 @@ describe("Research Studio HTTP to Dispatch SQLite integration", () => {
     expect(publicPayload.publication).not.toHaveProperty("assessment");
     expect(publicPayload.publication).not.toHaveProperty("extensions");
     expect(publicBody).toContain("13131313-1313-4131-8131-131313131313");
+  });
+
+  it("uses editorial queue filters and preview projection before explicit publication", async () => {
+    const editorialClient = new ResearchStudioDispatchClient({
+      baseUrl: "https://dispatch.integration.test",
+      applicationName: "Dispatch Editorial",
+      credential: { bearerToken: editorialToken },
+      fetch: routeFetch as typeof fetch,
+    });
+    const created = await editorialClient.createDraft({
+      slug: "editorial-preview-control",
+      type: "research-report",
+      title: "Editorial Preview Control",
+      excerpt: "A public draft remains unavailable until Dispatch explicitly publishes it.",
+      body: ["The preview and public route must use the same safe projection."],
+      readingTimeMinutes: 2,
+      visibility: "public",
+      tags: ["editorial"],
+      origin: {
+        kind: "partner-submission",
+        label: "Dispatch Editorial",
+        originatingApplication: "Dispatch Editorial",
+        originatingProject: "Editorial Integration",
+        stableObjectId: "editorial:preview:control",
+      },
+      createdBy: "Dispatch Editorial",
+      verificationStatus: "unverified",
+      sources: [{
+        id: "17171717-1717-4171-8171-171717171717",
+        title: "Editorial preview source",
+        authors: ["Dispatch Editorial"],
+        url: "https://example.org/editorial-preview-source",
+      }],
+      evidenceIds: [],
+    });
+    const queueResponse = await routeFetch(
+      "https://dispatch.integration.test/api/editorial/publications?state=draft&application=Dispatch%20Editorial&type=research-report&visibility=public&project=Editorial%20Integration",
+      { headers: { authorization: `Bearer ${editorialToken}` } },
+    );
+    expect(queueResponse.status).toBe(200);
+    expect((await queueResponse.json()).publications).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: created.publication.id }),
+    ]));
+
+    const previewResponse = await routeFetch(
+      `https://dispatch.integration.test/api/editorial/publications/${created.publication.id}/preview`,
+      { headers: { authorization: `Bearer ${editorialToken}` } },
+    );
+    expect(previewResponse.status).toBe(200);
+    const preview = await previewResponse.json();
+    expect(JSON.stringify(preview)).not.toContain("originatingProject");
+    const unavailablePublicResponse = await routeFetch(
+      "https://dispatch.integration.test/api/public/publications/editorial-preview-control",
+    );
+    expect(unavailablePublicResponse.status).toBe(404);
+
+    const review = await editorialClient.requestLifecycle(created.publication.id, {
+      to: "review",
+      expectedVersion: 1,
+      revisionSummary: "Begin editorial review.",
+    });
+    const ready = await editorialClient.requestLifecycle(created.publication.id, {
+      to: "ready",
+      expectedVersion: review.originLink.version,
+      revisionSummary: "Mark editorial preview control ready.",
+    });
+    await editorialClient.requestLifecycle(created.publication.id, {
+      to: "published",
+      expectedVersion: ready.originLink.version,
+      revisionSummary: "Explicitly publish editorial preview control.",
+    });
+    const publicResponse = await routeFetch(
+      "https://dispatch.integration.test/api/public/publications/editorial-preview-control",
+    );
+    expect(publicResponse.status).toBe(200);
+    const publicProjection = await publicResponse.json();
+    expect(publicProjection.publication).toMatchObject({
+      title: preview.publication.title,
+      excerpt: preview.publication.excerpt,
+      body: preview.publication.body,
+      sources: preview.publication.sources,
+      evidence: preview.publication.evidence,
+    });
+    expect(Object.keys(publicProjection.publication).sort()).toEqual(
+      Object.keys(preview.publication).sort(),
+    );
   });
 });

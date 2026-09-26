@@ -1,11 +1,11 @@
 # Mayday Dispatch
 
 Mayday Dispatch is a domain-first publishing service for evidence-led research,
-OSINT reports, and operational dispatches. Phase Four connects Research Studio
-to Dispatch's authenticated HTTP gateway, durable SQLite persistence, Evidence
-Registry API, structured operations logging, and editorial synchronization
-locking while retaining the domain and gateway boundaries. Overwatch is a
-second authenticated publishing client of that same gateway.
+OSINT reports, and operational dispatches. Phase Six completes Dispatch's
+editorial control room: authenticated intake and review, versioned editorial
+changes, readiness-gated publication, public-safe previews, durable audit and
+revision history, corrections, substantive updates, and archival. Research
+Studio and Overwatch remain draft-only upstream clients of the same gateway.
 
 ## Stack
 
@@ -33,9 +33,15 @@ directory are ignored by Git.
 | `npm run test:integration` | Run the authenticated HTTP-to-SQLite integration suite |
 | `npm run typecheck` | Run strict TypeScript checks |
 | `npm run lint` | Run ESLint |
+
+The authenticated editorial queue and readiness review are documented in
+[docs/editorial-workspace.md](docs/editorial-workspace.md).
+Publication lifecycle operations are documented in
+[docs/publication-operations.md](docs/publication-operations.md), with correction semantics in
+[docs/corrections.md](docs/corrections.md).
 | `npm run build` | Build the production application |
 
-## Phase Four guarantees
+## Editorial guarantees
 
 - Every mutation supplies `expectedVersion`; stale writes return
   `STALE_VERSION` without changing durable state.
@@ -57,6 +63,16 @@ directory are ignored by Git.
 - External synchronization is permitted only for drafts. Non-draft
   synchronization returns `EDITORIAL_LOCK` with the publication ID, current
   version, and lifecycle state.
+- Editors make version-checked, auditable changes to publication-facing
+  content; origin identity and upstream assessment provenance remain immutable.
+- Only publisher/admin actors may explicitly transition a ready publication to
+  `published`. Readiness errors block that operation; warnings remain advisory.
+- The editorial preview and public route share the same safe projection.
+  Internal provenance, Overwatch assessment rationale, and restricted evidence
+  are never rendered publicly.
+- Corrections, substantive updates, lifecycle transitions, and archives are
+  distinct revision/audit events. Archives retain history and have no hard
+  delete or withdrawal workflow.
 
 The Node `node:sqlite` API is experimental. This phase targets Node runtimes
 that provide `DatabaseSync` (Node 22.5+) and retains the repository
@@ -70,3 +86,5 @@ See [architecture](docs/architecture.md), [gateway](docs/gateway.md),
 [operations](docs/operations.md), and
 [Research Studio integration](docs/research-studio-integration.md), and
 [Overwatch integration](docs/overwatch-integration.md).
+- Editorial workspace: authenticated queue, readiness review, evidence inspection, and lifecycle
+  operations are documented in [docs/editorial-workspace.md](docs/editorial-workspace.md).

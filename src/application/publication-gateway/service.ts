@@ -27,6 +27,7 @@ import {
   type PublicationAuthorizationPolicy,
 } from "@/application/publication-gateway/authorization";
 import { GatewayError, gatewayValidationError } from "@/application/publication-gateway/errors";
+import { validatePublicationReadiness } from "@/application/publication-gateway/readiness";
 import type { AuditEvent } from "@/audit/events";
 import type { EvidenceRegistry, RegisteredEvidence } from "@/evidence/registry";
 import {
@@ -60,6 +61,7 @@ type PublicationPatch = Partial<
     | "slug"
     | "type"
     | "title"
+    | "subtitle"
     | "excerpt"
     | "body"
     | "publishedAt"
@@ -99,12 +101,14 @@ function cloneForRevision(
   publication: Publication,
   now: Date,
   summary: string,
+  revisionType: Publication["revision"]["revisionType"] = "editorial",
 ): Publication["revision"] {
   return {
     version: publication.revision.version + 1,
     previousVersion: publication.revision.version,
     updatedAt: now.toISOString(),
     summary,
+    revisionType,
   };
 }
 
@@ -209,6 +213,7 @@ export class PublicationGatewayService {
       lifecycleState: "draft",
       visibility: request.visibility,
       title: request.title,
+      subtitle: request.subtitle,
       excerpt: request.excerpt,
       body: request.body,
       publishedAt: request.publishedAt ?? isoDate(now),
@@ -282,7 +287,20 @@ export class PublicationGatewayService {
     this.authorization.assertCan("update", actor, publication);
     this.assertExpectedVersion(request.expectedVersion, publication);
     this.assertExternalSynchronizationIsUnlocked(publication, actor);
-    if (publication.lifecycleState !== "draft" && publication.lifecycleState !== "review") {
+    const revisionType = request.revisionType ?? (actorIsExternalApplication(actor)
+      ? "upstream-synchronization"
+      : "editorial");
+    if (!actorIsExternalApplication(actor) && request.extensions?.overwatch !== undefined) {
+      throw new GatewayError(
+        "FORBIDDEN",
+        "Editorial edits cannot replace internal Overwatch assessment metadata.",
+      );
+    }
+    if (
+      publication.lifecycleState !== "draft" &&
+      publication.lifecycleState !== "review" &&
+      !(revisionType === "correction" || revisionType === "substantive-update")
+    ) {
       throw new GatewayError(
         "CONFLICT",
         "Only draft or review publications can be edited directly.",
@@ -296,6 +314,7 @@ export class PublicationGatewayService {
       ...(request.slug !== undefined ? { slug: request.slug } : {}),
       ...(request.type !== undefined ? { type: request.type } : {}),
       ...(request.title !== undefined ? { title: request.title } : {}),
+      ...(request.subtitle !== undefined ? { subtitle: request.subtitle } : {}),
       ...(request.excerpt !== undefined ? { excerpt: request.excerpt } : {}),
       ...(request.body !== undefined ? { body: request.body } : {}),
       ...(request.publishedAt !== undefined ? { publishedAt: request.publishedAt } : {}),
@@ -308,20 +327,61 @@ export class PublicationGatewayService {
     };
     const updated = this.validatePublication({
       ...publication,
+      lifecycleState:
+        revisionType === "substantive-update" && publication.lifecycleState === "published"
+          ? "updated"
+          : publication.lifecycleState,
       ...patch,
-      revision: cloneForRevision(publication, this.now(), request.revisionSummary),
+      revision: cloneForRevision(publication, this.now(), request.revisionSummary, revisionType),
       provenance: {
         ...publication.provenance,
         verificationStatus:
           request.verificationStatus ?? publication.provenance.verificationStatus,
         internalNotes: request.internalNotes ?? publication.provenance.internalNotes,
       },
-      extensions: request.extensions ?? publication.extensions,
+      extensions: {
+        ...publication.extensions,
+        ...(request.extensions ?? {}),
+        ...(request.methodology !== undefined ? { methodology: request.methodology } : {}),
+        ...(request.caveat !== undefined ? { caveat: request.caveat } : {}),
+        ...(request.correctionNote
+          ? {
+              publicNotice: request.correctionPublic !== false
+                ? {
+                    kind: "correction",
+                    note: request.correctionNote,
+                    explanation: request.correctionExplanation,
+                    timestamp: this.now().toISOString(),
+                    version: publication.revision.version + 1,
+                  }
+                : undefined,
+            }
+          : {}),
+        ...(request.updateNote
+          ? {
+              publicNotice: request.updatePublic !== false
+                ? {
+                    kind: "update",
+                    note: request.updateNote,
+                    explanation: request.updateExplanation,
+                    timestamp: this.now().toISOString(),
+                    version: publication.revision.version + 1,
+                  }
+                : undefined,
+            }
+          : {}),
+      },
     });
     const saved = await this.persist(updated, {
       expectedVersion: request.expectedVersion,
       auditEvent: this.auditEvent(
-        "publication.update",
+        revisionType === "correction"
+          ? "publication.correction"
+          : revisionType === "substantive-update"
+            ? "publication.substantive-update"
+            : actorIsExternalApplication(actor)
+              ? "publication.origin.synchronize"
+              : "publication.update",
         updated,
         actor,
         context,
@@ -360,7 +420,12 @@ export class PublicationGatewayService {
     const updated = this.validatePublication({
       ...publication,
       evidence: [...publication.evidence, evidence],
-      revision: cloneForRevision(publication, this.now(), request.revisionSummary),
+      revision: cloneForRevision(
+        publication,
+        this.now(),
+        request.revisionSummary,
+        "editorial",
+      ),
     });
     const saved = await this.persist(updated, {
       expectedVersion: request.expectedVersion,
@@ -398,19 +463,38 @@ export class PublicationGatewayService {
     ) {
       throw new GatewayError("FORBIDDEN", "Publishing requires a publisher or admin actor.");
     }
+    if (request.to === "published") {
+      const readiness = validatePublicationReadiness(publication);
+      if (!readiness.ready) {
+        throw new GatewayError("VALIDATION_FAILED", "Publication is not ready to publish.", {
+          findings: readiness.findings,
+        });
+      }
+    }
     const updated = this.validatePublication({
       ...publication,
       lifecycleState: request.to,
-      revision: cloneForRevision(publication, this.now(), request.revisionSummary),
+      extensions: request.reason
+        ? { ...publication.extensions, archiveReason: request.reason }
+        : publication.extensions,
+      revision: cloneForRevision(
+        publication,
+        this.now(),
+        request.revisionSummary,
+        request.to === "archived" ? "archive" : "lifecycle-transition",
+      ),
     });
     const saved = await this.persist(updated, {
       expectedVersion: request.expectedVersion,
       auditEvent: this.auditEvent(
-        "publication.lifecycle.transition",
+        request.to === "archived"
+          ? "publication.archive"
+          : "publication.lifecycle.transition",
         updated,
         actor,
         context,
         publication.revision.version,
+        request.to === "archived" ? "archive" : "lifecycle-transition",
       ),
     });
     return this.response(saved, context);
@@ -534,6 +618,7 @@ export class PublicationGatewayService {
     actor: GatewayActor | undefined,
     context: GatewayRequestContext,
     previousVersion: number | undefined,
+    revisionType: AuditEvent["revisionType"] = publication.revision.revisionType,
   ): AuditEvent {
     return {
       id: this.idFactory(),
@@ -550,6 +635,7 @@ export class PublicationGatewayService {
       previousVersion,
       resultingVersion: publication.revision.version,
       outcome: "succeeded",
+      revisionType,
     };
   }
 

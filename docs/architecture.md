@@ -41,8 +41,9 @@ client under `src/integrations/research-studio`.
 Only `public` publications in `published` or `updated` state can be projected.
 The projection omits provenance, origin links, internal notes, visibility,
 private/internal evidence, locators, checksums, processors, and evidence
-provenance. Internal gateway origin-link metadata is never part of the public
-DTO.
+provenance. Internal gateway origin-link metadata and Overwatch assessment
+metadata are never part of the public DTO. Editorial preview uses this same
+projection function.
 
 ## Failure model
 

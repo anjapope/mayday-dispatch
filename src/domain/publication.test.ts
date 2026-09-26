@@ -85,6 +85,28 @@ describe("evidence visibility", () => {
       'Cannot create a public projection for a "internal" publication.',
     );
   });
+
+  it("projects public correction and methodology notices without internal metadata", () => {
+    const publication = {
+      ...publications[1],
+      extensions: {
+        ...publications[1].extensions,
+        methodology: "Public methodology.",
+        caveat: "Public caveat.",
+        publicNotice: {
+          kind: "correction" as const,
+          note: "A date was corrected.",
+          timestamp: "2026-09-24T12:00:00.000Z",
+          version: 3,
+        },
+        overwatch: { confidenceRationale: "internal" },
+      },
+    };
+    const projected = toPublicPublication(publication);
+    expect(projected.methodology).toBe("Public methodology.");
+    expect(projected.notice?.kind).toBe("correction");
+    expect(JSON.stringify(projected)).not.toContain("confidenceRationale");
+  });
 });
 
 describe("origins", () => {

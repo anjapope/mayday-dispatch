@@ -29,3 +29,8 @@ Overwatch assessment fields are stored under the non-public `extensions.overwatc
 ## Evidence and public safety
 
 Evidence must be registered through the Evidence Registry before association. External applications can associate only `public` or `citation-only` evidence. Mayday3-style processor, checksum, and provenance fields remain in the registry and are retained internally; restricted evidence and internal analytical metadata are stripped by the public projection.
+
+Dispatch editorial revisions distinguish corrections from substantive updates.
+Overwatch may synchronize only drafts; it cannot publish, correct, archive, or
+otherwise bypass the editorial lifecycle. Public preview uses the same safe
+projection as the public publication route.

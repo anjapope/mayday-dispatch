@@ -99,7 +99,7 @@ describe("SqlitePublicationRepository", () => {
     );
     expect(
       repository.database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get(),
-    ).toMatchObject({ count: 2 });
+    ).toMatchObject({ count: 3 });
     repository.close();
   });
 
@@ -149,6 +149,23 @@ describe("SqlitePublicationRepository", () => {
         .prepare("SELECT COUNT(*) AS count FROM audit_events WHERE publication_id = ?")
         .get(created.publication.id),
     ).toMatchObject({ count: 2 });
+    expect(await restarted.listRevisionHistory(created.publication.id)).toEqual([
+      expect.objectContaining({
+        version: 1,
+        actorSubject: "research",
+        lifecycleState: "draft",
+      }),
+      expect.objectContaining({
+        version: 2,
+        revisionType: "lifecycle-transition",
+        actorSubject: "editor",
+        lifecycleState: "review",
+      }),
+    ]);
+    expect(await restarted.listLifecycleHistory(created.publication.id)).toEqual([
+      expect.objectContaining({ fromState: undefined, toState: "draft", version: 1 }),
+      expect.objectContaining({ fromState: "draft", toState: "review", version: 2 }),
+    ]);
     restarted.close();
   });
 

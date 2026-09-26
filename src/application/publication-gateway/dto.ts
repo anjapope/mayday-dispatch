@@ -18,6 +18,7 @@ const DraftContentSchema = z.object({
   slug: SlugSchema,
   type: PublicationTypeSchema,
   title: z.string().trim().min(1),
+  subtitle: z.string().trim().min(1).optional(),
   excerpt: z.string().trim().min(1),
   body: z.array(z.string().trim().min(1)).min(1),
   publishedAt: z.string().date().optional(),
@@ -77,6 +78,15 @@ export const UpdatePublicationRequestSchema = DraftContentSchema.partial()
     internalNotes: z.string().trim().min(1).optional(),
     extensions: PublicationExtensionsSchema.optional(),
     revisionSummary: z.string().trim().min(1).default("Editorial update."),
+    revisionType: z.enum(["editorial", "correction", "substantive-update"]).optional(),
+    correctionNote: z.string().trim().min(1).optional(),
+    correctionExplanation: z.string().trim().min(1).optional(),
+    correctionPublic: z.boolean().optional(),
+    updateNote: z.string().trim().min(1).optional(),
+    updateExplanation: z.string().trim().min(1).optional(),
+    updatePublic: z.boolean().optional(),
+    methodology: z.string().trim().min(1).optional(),
+    caveat: z.string().trim().min(1).optional(),
     expectedVersion: z.number().int().positive(),
   })
   .strict()
@@ -101,6 +111,7 @@ export const TransitionPublicationRequestSchema = z
     to: LifecycleStateSchema,
     expectedVersion: z.number().int().positive(),
     revisionSummary: z.string().trim().min(1).default("Lifecycle transition."),
+    reason: z.string().trim().min(1).optional(),
   })
   .strict();
 
@@ -155,6 +166,7 @@ export const PublicPublicationResponseSchema = z
         type: PublicationTypeSchema,
         lifecycleState: z.enum(["published", "updated"]),
         title: z.string(),
+        subtitle: z.string().optional(),
         excerpt: z.string(),
         body: z.array(z.string()),
         publishedAt: z.string().date(),
@@ -163,6 +175,16 @@ export const PublicPublicationResponseSchema = z
         revision: RevisionMetadataSchema,
         sources: z.array(CitationSchema),
         evidence: z.array(PublicEvidenceResponseSchema),
+        methodology: z.string().optional(),
+        caveat: z.string().optional(),
+        notice: z.object({
+          kind: z.enum(["correction", "update"]),
+          note: z.string(),
+          timestamp: z.string().datetime({ offset: true }),
+          version: z.number().int().positive(),
+          explanation: z.string().optional(),
+        }).optional(),
+        relatedPublicationIds: z.array(z.string()).optional(),
       })
       .strict(),
   })

@@ -257,4 +257,167 @@ describe("PublicationGatewayService Phase Three", () => {
     expect(serialized).not.toContain("checksum");
     expect(serialized).not.toContain("provenance");
   });
+
+  it("supports editorial corrections and substantive updates without changing identity", async () => {
+    const { service, repository } = createHarness();
+    const created = await service.createDraft(
+      researchDraft({
+        visibility: "public",
+        lifecycleState: "draft",
+        sources: [publicSource],
+      }),
+      editorActor,
+      context,
+    );
+    const review = await service.transition(
+      created.publication.id,
+      { to: "review", expectedVersion: 1 },
+      editorActor,
+      context,
+    );
+    const ready = await service.transition(
+      created.publication.id,
+      { to: "ready", expectedVersion: review.publication.revision.version },
+      editorActor,
+      context,
+    );
+    const published = await service.transition(
+      created.publication.id,
+      { to: "published", expectedVersion: ready.publication.revision.version },
+      publisherActor,
+      context,
+    );
+    const corrected = await service.update(
+      created.publication.id,
+      {
+        body: ["Corrected evidence synthesis."],
+        expectedVersion: published.publication.revision.version,
+        revisionType: "correction",
+        correctionNote: "A source date was corrected.",
+      },
+      editorActor,
+      context,
+    );
+    expect(corrected.publication.id).toBe(created.publication.id);
+    expect(corrected.publication.revision.revisionType).toBe("correction");
+    expect(corrected.publication.extensions.publicNotice).toMatchObject({
+      kind: "correction",
+      version: corrected.publication.revision.version,
+    });
+    const updated = await service.update(
+      created.publication.id,
+      {
+        title: "New analysis",
+        expectedVersion: corrected.publication.revision.version,
+        revisionType: "substantive-update",
+        updateNote: "New analysis incorporates the latest reporting period.",
+      },
+      editorActor,
+      context,
+    );
+    expect(updated.publication.lifecycleState).toBe("updated");
+    expect(updated.publication.revision.revisionType).toBe("substantive-update");
+    expect((await repository.list()).some((item) => item.id === created.publication.id)).toBe(true);
+    expect(repository.auditEvents.map((event) => event.revisionType)).toContain("correction");
+    expect(repository.auditEvents.map((event) => event.revisionType)).toContain("substantive-update");
+  });
+
+  it("keeps upstream applications from changing editorial workflow state or publishing", async () => {
+    const { service } = createHarness();
+    const created = await service.createDraft(researchDraft(), researchActor, context);
+    await expect(
+      service.transition(
+        created.publication.id,
+        { to: "review", expectedVersion: created.publication.revision.version },
+        researchActor,
+        context,
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const reviewed = await service.transition(
+      created.publication.id,
+      { to: "review", expectedVersion: created.publication.revision.version },
+      editorActor,
+      context,
+    );
+    await expect(
+      service.update(
+        created.publication.id,
+        {
+          title: "Upstream bypass",
+          expectedVersion: reviewed.publication.revision.version,
+          revisionType: "editorial",
+        },
+        researchActor,
+        context,
+      ),
+    ).rejects.toMatchObject({ code: "EDITORIAL_LOCK" });
+  });
+
+  it("stores public-facing editorial methodology without allowing assessment replacement", async () => {
+    const { service } = createHarness();
+    const created = await service.createDraft(
+      researchDraft({
+        extensions: {
+          overwatch: { assessment: { confidenceRationale: "Origin-controlled internal rationale." } },
+        },
+      }),
+      editorActor,
+      context,
+    );
+    const edited = await service.update(
+      created.publication.id,
+      {
+        expectedVersion: 1,
+        methodology: "Public methodology statement.",
+        caveat: "Public caveat statement.",
+      },
+      editorActor,
+      context,
+    );
+    expect(edited.publication.extensions).toMatchObject({
+      methodology: "Public methodology statement.",
+      caveat: "Public caveat statement.",
+      overwatch: { assessment: { confidenceRationale: "Origin-controlled internal rationale." } },
+    });
+    await expect(
+      service.update(
+        created.publication.id,
+        {
+          expectedVersion: 2,
+          extensions: { overwatch: { assessment: { confidenceRationale: "Replacement." } } },
+        },
+        editorActor,
+        context,
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("records archival as a distinct, non-destructive revision", async () => {
+    const { service, repository } = createHarness();
+    const created = await service.createDraft(researchDraft(), researchActor, context);
+    const archived = await service.transition(
+      created.publication.id,
+      {
+        to: "archived",
+        expectedVersion: 1,
+        revisionSummary: "Archive superseded intake.",
+        reason: "Superseded by a later report.",
+      },
+      editorActor,
+      context,
+    );
+    expect(archived.publication).toMatchObject({
+      id: created.publication.id,
+      lifecycleState: "archived",
+      revision: { version: 2, revisionType: "archive" },
+      extensions: { archiveReason: "Superseded by a later report." },
+    });
+    expect(await repository.findById(created.publication.id)).toMatchObject({
+      lifecycleState: "archived",
+    });
+    expect(repository.auditEvents.at(-1)).toMatchObject({
+      action: "publication.archive",
+      revisionType: "archive",
+    });
+  });
 });

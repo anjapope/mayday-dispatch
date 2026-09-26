@@ -17,6 +17,14 @@ export const AuditEventSchema = z.object({
   outcome: z.enum(["succeeded", "rejected", "failed"]),
   reason: z.string().min(1).optional(),
   errorCode: z.string().min(1).optional(),
+  revisionType: z.enum([
+    "upstream-synchronization",
+    "editorial",
+    "lifecycle-transition",
+    "correction",
+    "substantive-update",
+    "archive",
+  ]).optional(),
 });
 
 export type AuditEvent = z.infer<typeof AuditEventSchema>;
