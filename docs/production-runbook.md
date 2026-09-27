@@ -105,15 +105,51 @@ and production never seeds fixture records.
    existing editorial session.
 5. The browser sign-in exchanges a configured Dispatch bearer credential for
    an eight-hour signed, `HttpOnly`, `SameSite=Strict` cookie. Cookies are
-   `Secure` in production. Each request resolves the account's current
-   configured roles; removing or changing the account invalidates its session.
-   State-changing cookie requests require a same-origin `Origin` header.
+   `Secure` in production. Each request checks a credential fingerprint that
+   binds the current token/HMAC key and assigned roles; changing either,
+   removing the account, or rotating the session-signing key invalidates
+   existing sessions. State-changing cookie requests require an exact
+   same-origin `Origin` header. Logout clears malformed and expired cookies.
    Upstream application credentials cannot sign into the editorial UI.
 6. This application-level sign-in is not an OIDC/MFA provider. Before public
    launch, expose editorial routes only behind the organization's VPN/identity
    perimeter, enable MFA and rate limiting for `/api/editorial/session`, and
    preserve the external host and `Origin` through the reverse proxy. Do not
    configure a proxy to give browser users a shared publisher identity.
+7. API request bodies are limited to 1 MiB in application code. Enforce an
+   equal or smaller request-size limit at the ingress, and separately
+   configure connection/rate limits; the body cap is not a DoS or bandwidth
+   control.
+
+## Disposable staging
+
+The checked-in staging profile binds to `127.0.0.1:3001`, uses distinct
+`mayday-staging-*` volumes, has no canonical public URL, and enables
+`MAYDAY_PUBLIC_INDEXING_DISABLED`. That setting returns a sitewide noindex
+header and disallows all robots paths. It does not prevent access or replace
+network restrictions.
+
+1. Copy `.env.staging.example` to the ignored `.env.staging`; keep its staging
+   database path and `MAYDAY_PUBLIC_INDEXING_DISABLED=true`.
+2. Create separate, disposable credentials for Research Studio, Overwatch,
+   Mayday3, one editor/publisher, and one operator. Use synthetic content and
+   unique test tokens only. Keep the credential JSON and a random session key
+   under the ignored `secrets/` directory; never reuse a production value or
+   restricted source/client data.
+3. Build and rehearse only against the staging Compose profile:
+
+   ```sh
+   docker compose --project-name mayday-staging --env-file .env.staging -f compose.staging.yaml build
+   docker compose --project-name mayday-staging --env-file .env.staging -f compose.staging.yaml run --rm --no-deps mayday-dispatch npm run db:migrate
+   docker compose --project-name mayday-staging --env-file .env.staging -f compose.staging.yaml up -d
+   ```
+
+4. Verify the bound port, health, `X-Robots-Tag`, `robots.txt`, empty
+   production-shaped page, sign-in, release, lockdown, backup, restart, restore,
+   and rollback behavior. Retain test records only in the staging volume.
+5. `compose.staging.yaml` has separate named volumes and a loopback-only port.
+   Do not attach a public URL, configure public DNS, or disable noindex during
+   rehearsal.
 
 Credential rotation: provision a new, independent token and subject, update
 the relevant upstream and Dispatch credential stores, verify the new identity
@@ -261,19 +297,32 @@ directory.
 
 Public HTML, public publication APIs, and sitemap entries use the
 `PublicPublication` projection and only `public` visibility in `published` or
-`updated` state. Editorial previews, API routes, and editorial pages are
-separate; editorial pages send `noindex` metadata. The robots file disallows
-editorial and API paths, but authorization/projection—not robots—is the privacy
-boundary. There is no separate feed or search index in this phase.
+`updated` state, backed by an exact, verified release manifest. Public queries
+validate the snapshot digest and matching audit event; later editorial changes
+do not alter the live snapshot. Editorial previews, API routes, and editorial
+pages are separate; editorial pages send `noindex` metadata. The robots file
+disallows editorial subroutes and API paths, but
+authorization/projection—not robots—is the privacy boundary. There is no RSS
+feed.
+
+Migration 008 adds release-manifest storage without backfilling Phase Eleven
+records. Existing `published` or `updated` rows without a manifest are omitted
+from public pages, search, and sitemap until a publisher verifies and explicitly
+re-releases each record. This is intentional fail-closed behavior; do not
+bulk-create manifests from mutable rows.
 
 Set `MAYDAY_PUBLIC_BASE_URL` to the selected HTTPS origin to emit canonical
 article/index metadata, absolute sitemap URLs, and the sitemap reference in
 `robots.txt`. Until a domain is selected the variable remains unset and the
 sitemap is empty; no domain is hard-coded. The sitemap enumerates only the
-public query result. The CSP uses per-response script/style nonces, blocks
-objects/frames, and permits HTTPS images because public content may reference
-governed external media. The interactive map uses a local static image and
-inline positional styles; there is no required third-party map/media service.
+public query result. Set `MAYDAY_PUBLIC_INDEXING_DISABLED=true` in staging to
+send `X-Robots-Tag` and disallow all robots paths. The CSP uses per-response
+script/style nonces, blocks objects and frames, and permits HTTPS images
+because public content may reference governed external media. The renderer
+uses `referrerPolicy=no-referrer`; a third-party image host can still receive
+the reader's network request. The interactive map uses a local static image
+and inline positional styles; there is no required third-party map/media
+service.
 The reverse proxy must terminate HTTPS; HSTS is sent by the application.
 
 ## Logging, monitoring, and incident response
@@ -343,12 +392,16 @@ Before deployment:
 
 Rollback conditions include failed migration/startup, unhealthy database,
 unexpected public projection, unauthorized lifecycle success, missing durable
-audit, or public content disappearance. Stop the candidate first. An
-application-only rollback is permitted only when the old image is compatible
-with the migrated schema. Otherwise restore a verified backup to a new path
-and perform an explicit configuration cutover; this may lose writes made
-after that backup. Do not claim rollback until the old image, schema,
-publication visibility, and audit history have been verified.
+audit, or public content disappearance. Stop the candidate first. Migration
+008 is additive and old code can open its schema, but the Phase Eleven
+application does not understand release manifests and reads mutable
+publication rows. Roll back the application alone only before Phase Twelve
+edits, releases, or archives have been written. After any such operation,
+restore the verified pre-upgrade backup to a **new** database path, cut over
+deliberately to that path and the prior image, and preserve the later database
+for investigation. This discards writes since the backup. Do not claim
+rollback until schema, publication visibility, revision/audit history,
+evidence relationships, and lockdown have been checked.
 
 For an interrupted startup, inspect Compose/container state and the exact
 database process-lock file. Do not remove it while the owning process may still
@@ -362,6 +415,6 @@ restart remedy.
 Before public launch, the service owner must select the canonical domain and
 TLS/reverse-proxy configuration, the host/provider and durable off-host backup
 target, the organization's MFA/SSO perimeter and rate limits, log retention
-and alert destinations, recovery objectives, and an on-call operator/publisher
-rotation. Those infrastructure decisions are intentionally not selected or
-deployed by this phase.
+and alert destinations, recovery objectives, legal review, privacy retention,
+and an on-call operator/publisher rotation. Those infrastructure decisions
+are intentionally not selected or deployed by this phase.

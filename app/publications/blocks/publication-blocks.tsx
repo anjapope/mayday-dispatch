@@ -16,7 +16,7 @@ function BlockEvidence({ evidenceId, evidence }: { evidenceId?: string; evidence
 function VisualBlock({ block, evidence }: { block: Extract<PublicationContentBlock, { type: "figure" | "image" }>; evidence: readonly PublicEvidence[] }) {
   const label = block.type === "figure" ? `Figure ${block.figureNumber ?? ""}`.trim() : "Image";
   return <figure className={`rich-block rich-block--${block.type}`}>
-    <img src={block.url} alt={block.decorative ? "" : block.alt} width={block.width} height={block.height} />
+    <img src={block.url} alt={block.decorative ? "" : block.alt} width={block.width} height={block.height} referrerPolicy="no-referrer" />
     <figcaption>
       <strong>{label}.</strong> {block.caption}
       {block.credit && <span> Credit: {block.credit}.</span>}

@@ -11,9 +11,10 @@ export function middleware(request: NextRequest) {
     "default-src 'self'",
     "base-uri 'self'",
     "object-src 'none'",
+    "frame-src 'none'",
     "frame-ancestors 'none'",
     "form-action 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+    `script-src 'self' 'nonce-${nonce}'`,
     `style-src 'self' 'nonce-${nonce}'`,
     "style-src-attr 'unsafe-inline'",
     "img-src 'self' data: https:",
@@ -22,9 +23,13 @@ export function middleware(request: NextRequest) {
     "upgrade-insecure-requests",
   ].join("; ");
   const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("Content-Security-Policy", contentSecurityPolicy);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", contentSecurityPolicy);
+  if (process.env.MAYDAY_PUBLIC_INDEXING_DISABLED === "true") {
+    response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+  }
   return response;
 }
 

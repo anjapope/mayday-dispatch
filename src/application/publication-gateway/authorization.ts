@@ -22,6 +22,7 @@ export type GatewayActor = {
   subjectId: string;
   roles: GatewayRole[];
   originatingApplication?: string;
+  authenticationMethod?: "application-credential" | "editorial-session" | "development";
 };
 
 export type GatewayAction =

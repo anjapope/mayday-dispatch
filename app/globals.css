@@ -114,6 +114,53 @@ a {
   width: 100%;
 }
 
+.empty-homepage {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  margin: 0 auto;
+  min-height: min(72vh, 760px);
+  padding: 4rem 1rem 5rem;
+  width: min(760px, 100%);
+}
+
+.empty-homepage h1 {
+  max-width: 720px;
+}
+
+.empty-homepage > p:not(.eyebrow) {
+  color: var(--slate);
+  font-size: 1.1rem;
+  max-width: 650px;
+}
+
+.empty-homepage nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.empty-homepage nav a {
+  background: var(--charcoal);
+  border: 1px solid var(--charcoal);
+  color: var(--bone);
+  font-weight: 700;
+  padding: 0.7rem 1rem;
+  text-decoration: none;
+}
+
+.empty-homepage nav a:hover {
+  background: var(--olive);
+  border-color: var(--olive);
+}
+
+.empty-public-section {
+  border-top: 1px solid var(--rule);
+  color: var(--slate);
+  padding: 1.25rem 0;
+}
+
 body:has(.dispatch-map-experience) .public-footer {
   align-items: center;
   background: #d8d0be;

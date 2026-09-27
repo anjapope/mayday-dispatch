@@ -1,0 +1,42 @@
+services:
+  mayday-dispatch:
+    build: .
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env.staging
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      MAYDAY_DATABASE_PATH: ${MAYDAY_DATABASE_PATH:-/var/lib/mayday-dispatch/staging.sqlite}
+      MAYDAY_APPLICATION_CREDENTIALS_FILE: /run/secrets/application_credentials
+      MAYDAY_SESSION_SECRET_FILE: /run/secrets/session_signing_key
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - mayday-staging-data:/var/lib/mayday-dispatch
+      - mayday-staging-backups:/var/backups/mayday-dispatch
+    secrets:
+      - application_credentials
+      - session_signing_key
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  mayday-staging-data:
+  mayday-staging-backups:
+
+secrets:
+  application_credentials:
+    file: ${MAYDAY_APPLICATION_CREDENTIALS_HOST_FILE:?Set a disposable staging credential JSON file path}
+  session_signing_key:
+    file: ${MAYDAY_SESSION_SECRET_HOST_FILE:?Set a disposable staging session key file path}

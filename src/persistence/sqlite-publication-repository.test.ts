@@ -97,6 +97,7 @@ describe("SqlitePublicationRepository", () => {
         "audit_events",
         "operational_controls",
         "operational_audit_events",
+        "publication_release_manifests",
         "idempotency_keys",
         "evidence_revisions",
         "evidence_audit_events",
@@ -106,8 +107,33 @@ describe("SqlitePublicationRepository", () => {
     );
     expect(
       repository.database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get(),
-    ).toMatchObject({ count: 7 });
+    ).toMatchObject({ count: 8 });
     repository.close();
+  });
+
+  it("fails closed for legacy published rows without an explicit release manifest", async () => {
+    const repository = new SqlitePublicationRepository(databasePath());
+    try {
+      const service = new PublicationGatewayService({
+        repository,
+        evidenceRegistry: repository,
+        now: () => new Date("2026-09-22T19:30:10.431Z"),
+      });
+      const created = await service.createDraft(
+        draft({ visibility: "public", evidenceIds: [] }),
+        research,
+        context,
+      );
+      repository.database.prepare(
+        "UPDATE publications SET lifecycle_state = 'published' WHERE id = ?",
+      ).run(created.publication.id);
+
+      expect(await repository.listPublicSnapshots()).toEqual([]);
+      expect(await repository.getPublicSnapshotBySlug("durable-research-draft")).toBeUndefined();
+      expect(await repository.listReleaseManifests(created.publication.id)).toEqual([]);
+    } finally {
+      repository.close();
+    }
   });
 
   it("survives restart with origin, revision, evidence, lifecycle, and audit data", async () => {

@@ -35,6 +35,7 @@ import {
   RepositoryIdempotencyConflictError,
   RepositoryPersistenceError,
   type PublicationRepository,
+  type PublicationReleaseManifest,
   type SavePublicationOptions,
 } from "@/publications/repository";
 
@@ -291,6 +292,17 @@ export class PublicationGatewayService {
     this.authorization.assertCan("update", actor, publication);
     this.assertExpectedVersion(request.expectedVersion, publication);
     this.assertExternalSynchronizationIsUnlocked(publication, actor);
+    if (
+      (publication.lifecycleState === "published" || publication.lifecycleState === "updated") &&
+      publication.visibility === "public" &&
+      request.visibility !== undefined &&
+      request.visibility !== "public"
+    ) {
+      throw new GatewayError(
+        "CONFLICT",
+        "A released public publication must be archived to withdraw it; changing its staged visibility does not revoke a release.",
+      );
+    }
     const revisionType = request.revisionType ?? (actorIsExternalApplication(actor)
       ? "upstream-synchronization"
       : "editorial");
@@ -351,28 +363,24 @@ export class PublicationGatewayService {
         ...(request.caveat !== undefined ? { caveat: request.caveat } : {}),
         ...(request.correctionNote
           ? {
-              publicNotice: request.correctionPublic !== false
-                ? {
-                    kind: "correction",
-                    note: request.correctionNote,
-                    explanation: request.correctionExplanation,
-                    timestamp: this.now().toISOString(),
-                    version: publication.revision.version + 1,
-                  }
-                : undefined,
+              publicNotice: {
+                kind: "correction",
+                note: request.correctionNote,
+                explanation: request.correctionExplanation,
+                timestamp: this.now().toISOString(),
+                version: publication.revision.version + 1,
+              },
             }
           : {}),
         ...(request.updateNote
           ? {
-              publicNotice: request.updatePublic !== false
-                ? {
-                    kind: "update",
-                    note: request.updateNote,
-                    explanation: request.updateExplanation,
-                    timestamp: this.now().toISOString(),
-                    version: publication.revision.version + 1,
-                  }
-                : undefined,
+              publicNotice: {
+                kind: "update",
+                note: request.updateNote,
+                explanation: request.updateExplanation,
+                timestamp: this.now().toISOString(),
+                version: publication.revision.version + 1,
+              },
             }
           : {}),
       },
@@ -477,13 +485,26 @@ export class PublicationGatewayService {
     ) {
       throw new GatewayError("FORBIDDEN", "Publishing requires a publisher or admin actor.");
     }
+    if (
+      (request.to === "published" || request.to === "updated") &&
+      actor?.authenticationMethod !== "editorial-session"
+    ) {
+      throw new GatewayError(
+        "FORBIDDEN",
+        "Public release authorization requires an authenticated editorial session.",
+      );
+    }
     if (request.to === "published" || request.to === "updated") {
       await this.assertPublicReleaseUnlocked();
-    }
-    if (request.to === "published") {
+      if (publication.visibility !== "public") {
+        throw new GatewayError(
+          "VALIDATION_FAILED",
+          "A publication must be explicitly classified as public before release.",
+        );
+      }
       const readiness = validatePublicationReadiness(publication);
       if (!readiness.ready) {
-        throw new GatewayError("VALIDATION_FAILED", "Publication is not ready to publish.", {
+        throw new GatewayError("VALIDATION_FAILED", "Publication is not ready to release.", {
           findings: readiness.findings,
         });
       }
@@ -501,22 +522,28 @@ export class PublicationGatewayService {
         request.to === "archived" ? "archive" : "lifecycle-transition",
       ),
     });
+    const releaseEvent = request.to === "published" || request.to === "updated";
+    const auditEvent = this.auditEvent(
+      request.to === "published"
+        ? "publication.release"
+        : request.to === "updated"
+          ? "publication.release.update"
+          : request.to === "archived"
+            ? "publication.archive"
+            : "publication.lifecycle.transition",
+      updated,
+      actor,
+      context,
+      publication.revision.version,
+      request.to === "archived" ? "archive" : "lifecycle-transition",
+    );
+    const releaseManifest = releaseEvent
+      ? this.createReleaseManifest(updated, actor!, context, auditEvent)
+      : undefined;
     const saved = await this.persist(updated, {
       expectedVersion: request.expectedVersion,
-      auditEvent: this.auditEvent(
-        request.to === "published"
-          ? "publication.release"
-          : request.to === "updated"
-            ? "publication.release.update"
-            : request.to === "archived"
-              ? "publication.archive"
-              : "publication.lifecycle.transition",
-        updated,
-        actor,
-        context,
-        publication.revision.version,
-        request.to === "archived" ? "archive" : "lifecycle-transition",
-      ),
+      auditEvent,
+      releaseManifest,
     });
     return this.response(saved, context);
   }
@@ -526,16 +553,12 @@ export class PublicationGatewayService {
     actor: GatewayActor | undefined,
   ): Promise<PublicPublicationResponse> {
     this.authorization.assertCan("readPublic", actor);
-    const publication = await this.repository.findBySlug(slug);
-    if (
-      !publication ||
-      publication.visibility !== "public" ||
-      !PUBLIC_LIFECYCLE_STATES.includes(publication.lifecycleState)
-    ) {
+    const publication = await this.repository.getPublicSnapshotBySlug(slug);
+    if (!publication || !PUBLIC_LIFECYCLE_STATES.includes(publication.lifecycleState)) {
       throw new GatewayError("NOT_FOUND", "Publication not found.");
     }
     return PublicPublicationResponseSchema.parse({
-      publication: toPublicPublication(publication),
+      publication,
     });
   }
 
@@ -704,6 +727,41 @@ export class PublicationGatewayService {
         "Dispatch publication lockdown is active; new public releases are blocked.",
       );
     }
+  }
+
+  private createReleaseManifest(
+    publication: Publication,
+    actor: GatewayActor,
+    context: GatewayRequestContext,
+    auditEvent: AuditEvent,
+  ): PublicationReleaseManifest {
+    const readiness = validatePublicationReadiness(publication);
+    if (!readiness.ready) {
+      throw new GatewayError("VALIDATION_FAILED", "Publication is not ready to release.", {
+        findings: readiness.findings,
+      });
+    }
+    const publicSnapshot = PublicPublicationResponseSchema.parse({
+      publication: toPublicPublication(publication),
+    }).publication;
+    const publicContentDigest = createHash("sha256")
+      .update(JSON.stringify(publicSnapshot), "utf8")
+      .digest("hex");
+    return {
+      releaseOperationId: auditEvent.id,
+      publicationId: publication.id,
+      publicationVersion: publication.revision.version,
+      releasedAt: publication.revision.updatedAt,
+      publisherSubjectId: actor.subjectId,
+      publicContentDigest,
+      evidenceValidation: {
+        passed: true,
+        findingCodes: readiness.findings.map((finding) => finding.code),
+      },
+      auditCorrelationId: context.correlationId,
+      publicStatus: publication.lifecycleState as "published" | "updated",
+      publicSnapshot,
+    };
   }
 
   private assertExpectedVersion(expectedVersion: number, publication: Publication): void {

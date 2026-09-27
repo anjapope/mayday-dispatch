@@ -106,23 +106,31 @@ export function runMigrations(database, directory = DEFAULT_MIGRATIONS_DIRECTORY
 
     database.exec("BEGIN IMMEDIATE");
     try {
-      database.exec(sql);
-      if (trackerHasChecksum(database)) {
-        database.prepare(
-          "INSERT INTO schema_migrations (name, applied_at, checksum) VALUES (?, ?, ?)",
-        ).run(name, new Date().toISOString(), checksum(sql));
-        for (const migrationName of initial.files) {
-          database.prepare(
-            "UPDATE schema_migrations SET checksum = ? WHERE name = ? AND checksum IS NULL",
-          ).run(
-            checksum(readFileSync(join(directory, migrationName), "utf8")),
-            migrationName,
-          );
+      const appliedByConcurrentRunner = readMigrationRecords(database)
+        .find((record) => record.name === name);
+      if (appliedByConcurrentRunner) {
+        if (appliedByConcurrentRunner.checksum && appliedByConcurrentRunner.checksum !== checksum(sql)) {
+          throw new Error(`Applied migration ${name} has changed since it was recorded.`);
         }
       } else {
-        database.prepare(
-          "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
-        ).run(name, new Date().toISOString());
+        database.exec(sql);
+        if (trackerHasChecksum(database)) {
+          database.prepare(
+            "INSERT INTO schema_migrations (name, applied_at, checksum) VALUES (?, ?, ?)",
+          ).run(name, new Date().toISOString(), checksum(sql));
+          for (const migrationName of initial.files) {
+            database.prepare(
+              "UPDATE schema_migrations SET checksum = ? WHERE name = ? AND checksum IS NULL",
+            ).run(
+              checksum(readFileSync(join(directory, migrationName), "utf8")),
+              migrationName,
+            );
+          }
+        } else {
+          database.prepare(
+            "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+          ).run(name, new Date().toISOString());
+        }
       }
       database.exec("COMMIT");
     } catch (error) {

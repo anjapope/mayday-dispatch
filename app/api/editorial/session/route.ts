@@ -62,15 +62,10 @@ export async function POST(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
-  try {
-    await actorFromRequest(request);
-    const response = NextResponse.json({ signedOut: true }, {
-      headers: { "cache-control": "no-store" },
-    });
-    response.headers.set("set-cookie", clearEditorialSessionCookie(secureCookie()));
-    return response;
-  } catch (error) {
-    return gatewayErrorResponse(error);
-  }
+export async function DELETE() {
+  const response = NextResponse.json({ signedOut: true }, {
+    headers: { "cache-control": "no-store" },
+  });
+  response.headers.set("set-cookie", clearEditorialSessionCookie(secureCookie()));
+  return response;
 }

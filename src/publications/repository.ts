@@ -1,14 +1,15 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { z } from "zod";
 import { AuditEventSchema, type AuditEvent } from "@/audit/events";
 import {
   PublicationSchema,
-  toPublicPublication,
   type Publication,
   type PublicPublication,
 } from "@/domain/publication";
+import { PublicPublicationResponseSchema } from "@/application/publication-gateway/dto";
 import {
   RegisteredEvidenceSchema,
   type EvidenceSaveOptions,
@@ -40,9 +41,28 @@ export type IdempotencyRecord = {
 export type SavePublicationOptions = {
   expectedVersion: number;
   auditEvent: AuditEvent;
+  releaseManifest?: PublicationReleaseManifest;
   registeredEvidence?: readonly RegisteredEvidence[];
   idempotency?: Omit<IdempotencyRecord, "publicationId" | "resultingVersion" | "response">;
 };
+
+export type PublicationReleaseManifest = {
+  releaseOperationId: string;
+  publicationId: string;
+  publicationVersion: number;
+  releasedAt: string;
+  publisherSubjectId: string;
+  publicContentDigest: string;
+  evidenceValidation: { passed: true; findingCodes: string[] };
+  auditCorrelationId: string;
+  publicStatus: "published" | "updated";
+  publicSnapshot: PublicPublication;
+};
+
+const ReleaseEvidenceValidationSchema = z.object({
+  passed: z.literal(true),
+  findingCodes: z.array(z.string().regex(/^[A-Z0-9_]+$/)),
+}).strict();
 
 export type RevisionHistoryEntry = Publication["revision"] & {
   publicationId: string;
@@ -116,6 +136,9 @@ export interface PublicationRepository {
     key: string,
   ): Promise<IdempotencyRecord | undefined>;
   save(publication: Publication, options: SavePublicationOptions): Promise<Publication>;
+  listPublicSnapshots(): Promise<PublicPublication[]>;
+  getPublicSnapshotBySlug(slug: string): Promise<PublicPublication | undefined>;
+  listReleaseManifests?(publicationId: string): Promise<PublicationReleaseManifest[]>;
   listRevisionHistory?(publicationId: string): Promise<RevisionHistoryEntry[]>;
   listLifecycleHistory?(publicationId: string): Promise<LifecycleHistoryEntry[]>;
   checkHealth?(): Promise<RepositoryHealth>;
@@ -146,11 +169,93 @@ function originMatches(publication: Publication, origin: OriginIdentity): boolea
   );
 }
 
+function publicContentDigest(snapshot: PublicPublication): string {
+  return createHash("sha256").update(JSON.stringify(snapshot), "utf8").digest("hex");
+}
+
+function validatePublicSnapshot(
+  snapshot: PublicPublication,
+  expectedDigest: string,
+): PublicPublication {
+  const parsed = PublicPublicationResponseSchema.parse({ publication: snapshot }).publication;
+  if (publicContentDigest(parsed) !== expectedDigest) {
+    throw new RepositoryPersistenceError("release-manifest-integrity");
+  }
+  return parsed;
+}
+
+function readPersistedReleaseManifest(row: SqliteRow): PublicationReleaseManifest {
+  const evidenceValidation = ReleaseEvidenceValidationSchema.parse(
+    JSON.parse(String(row.evidence_validation_json)),
+  );
+  const publicStatus = z.enum(["published", "updated"]).parse(String(row.public_status));
+  const snapshot = validatePublicSnapshot(
+    JSON.parse(String(row.public_snapshot_json)) as PublicPublication,
+    String(row.public_content_digest),
+  );
+  const manifest: PublicationReleaseManifest = {
+    releaseOperationId: String(row.release_operation_id),
+    publicationId: String(row.publication_id),
+    publicationVersion: Number(row.publication_version),
+    releasedAt: String(row.released_at),
+    publisherSubjectId: String(row.publisher_subject_id),
+    publicContentDigest: String(row.public_content_digest),
+    evidenceValidation,
+    auditCorrelationId: String(row.audit_correlation_id),
+    publicStatus,
+    publicSnapshot: snapshot,
+  };
+  const expectedAuditAction = publicStatus === "published"
+    ? "publication.release"
+    : "publication.release.update";
+  if (
+    row.audit_action !== expectedAuditAction ||
+    row.audit_actor_subject !== manifest.publisherSubjectId ||
+    row.audit_correlation_id !== row.audit_event_correlation_id ||
+    row.audit_publication_id !== manifest.publicationId ||
+    Number(row.audit_resulting_version) !== manifest.publicationVersion ||
+    row.audit_outcome !== "succeeded" ||
+    snapshot.id !== manifest.publicationId ||
+    snapshot.revision.version !== manifest.publicationVersion ||
+    snapshot.lifecycleState !== manifest.publicStatus
+  ) {
+    throw new RepositoryPersistenceError("release-manifest-audit-integrity");
+  }
+  return manifest;
+}
+
+function validateReleaseManifest(
+  publication: Publication,
+  auditEvent: AuditEvent,
+  manifest: PublicationReleaseManifest,
+): void {
+  const snapshot = validatePublicSnapshot(manifest.publicSnapshot, manifest.publicContentDigest);
+  if (
+    manifest.publicationId !== publication.id ||
+    manifest.publicationVersion !== publication.revision.version ||
+    manifest.publicStatus !== publication.lifecycleState ||
+    (manifest.publicStatus !== "published" && manifest.publicStatus !== "updated") ||
+    manifest.publisherSubjectId !== auditEvent.actor.subjectId ||
+    manifest.auditCorrelationId !== auditEvent.correlationId ||
+    manifest.releaseOperationId !== auditEvent.id ||
+    auditEvent.resultingVersion !== publication.revision.version ||
+    !["publication.release", "publication.release.update"].includes(auditEvent.action) ||
+    snapshot.id !== publication.id ||
+    snapshot.revision.version !== publication.revision.version ||
+    snapshot.lifecycleState !== manifest.publicStatus ||
+    manifest.evidenceValidation.passed !== true ||
+    manifest.evidenceValidation.findingCodes.some((code) => !/^[A-Z0-9_]+$/.test(code))
+  ) {
+    throw new RepositoryPersistenceError("release-manifest-validation");
+  }
+}
+
 export class InMemoryPublicationRepository implements PublicationRepository {
   private readonly publications = new Map<string, Publication>();
   private readonly idempotency = new Map<string, IdempotencyRecord>();
   readonly auditEvents: AuditEvent[] = [];
   readonly operationalAuditEvents: OperationalAuditEvent[] = [];
+  readonly releaseManifests: PublicationReleaseManifest[] = [];
   private publicationLockdown: PublicationLockdown = {
     enabled: false,
     version: 0,
@@ -204,6 +309,9 @@ export class InMemoryPublicationRepository implements PublicationRepository {
     }
 
     const auditEvent = AuditEventSchema.parse(options.auditEvent);
+    if (options.releaseManifest) {
+      validateReleaseManifest(parsed, auditEvent, options.releaseManifest);
+    }
     if (options.idempotency) {
       const storageKey = `${options.idempotency.actorScope}:${options.idempotency.key}`;
       const existingKey = this.idempotency.get(storageKey);
@@ -219,7 +327,43 @@ export class InMemoryPublicationRepository implements PublicationRepository {
     }
     this.publications.set(parsed.id, clonePublication(parsed));
     this.auditEvents.push(structuredClone(auditEvent));
+    if (options.releaseManifest) {
+      this.releaseManifests.push(structuredClone(options.releaseManifest));
+    }
     return clonePublication(parsed);
+  }
+
+  async listPublicSnapshots(): Promise<PublicPublication[]> {
+    const activePublications = new Set(
+      Array.from(this.publications.values())
+        .filter((publication) =>
+          publication.lifecycleState === "published" || publication.lifecycleState === "updated",
+        )
+        .map((publication) => publication.id),
+    );
+    const latestByPublication = new Map<string, PublicationReleaseManifest>();
+    for (const manifest of this.releaseManifests) {
+      if (!activePublications.has(manifest.publicationId)) continue;
+      const previous = latestByPublication.get(manifest.publicationId);
+      if (!previous || previous.publicationVersion < manifest.publicationVersion) {
+        latestByPublication.set(manifest.publicationId, manifest);
+      }
+    }
+    return Array.from(latestByPublication.values()).map((manifest) =>
+      validatePublicSnapshot(manifest.publicSnapshot, manifest.publicContentDigest),
+    );
+  }
+
+  async getPublicSnapshotBySlug(slug: string): Promise<PublicPublication | undefined> {
+    return (await this.listPublicSnapshots()).find((publication) => publication.slug === slug);
+  }
+
+  async listReleaseManifests(publicationId: string): Promise<PublicationReleaseManifest[]> {
+    return structuredClone(
+      this.releaseManifests
+        .filter((manifest) => manifest.publicationId === publicationId)
+        .sort((left, right) => left.publicationVersion - right.publicationVersion),
+    );
   }
 
   async checkHealth(): Promise<RepositoryHealth> {
@@ -399,6 +543,69 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
   async findBySlug(slug: string): Promise<Publication | undefined> {
     const row = this.database.prepare("SELECT id FROM publications WHERE slug = ?").get(slug);
     return row ? this.readPublication(String(row.id)) : undefined;
+  }
+
+  async listPublicSnapshots(): Promise<PublicPublication[]> {
+    const rows = this.database.prepare(`
+      SELECT m.release_operation_id, m.publication_id, m.publication_version, m.released_at,
+        m.publisher_subject_id, m.public_content_digest, m.evidence_validation_json,
+        m.audit_correlation_id, m.public_status, m.public_snapshot_json,
+        a.action AS audit_action, a.actor_subject AS audit_actor_subject,
+        a.correlation_id AS audit_event_correlation_id,
+        a.publication_id AS audit_publication_id,
+        a.resulting_version AS audit_resulting_version, a.outcome AS audit_outcome
+      FROM publication_release_manifests m
+      JOIN publications p ON p.id = m.publication_id
+      LEFT JOIN audit_events a ON a.id = m.release_operation_id
+      WHERE p.lifecycle_state IN ('published', 'updated')
+        AND m.publication_version = (
+          SELECT MAX(latest.publication_version)
+          FROM publication_release_manifests latest
+          WHERE latest.publication_id = m.publication_id
+        )
+      ORDER BY m.released_at DESC, m.publication_id
+    `).all() as SqliteRow[];
+    return rows.map((row) => readPersistedReleaseManifest(row).publicSnapshot);
+  }
+
+  async getPublicSnapshotBySlug(slug: string): Promise<PublicPublication | undefined> {
+    const rows = this.database.prepare(`
+      SELECT m.release_operation_id, m.publication_id, m.publication_version, m.released_at,
+        m.publisher_subject_id, m.public_content_digest, m.evidence_validation_json,
+        m.audit_correlation_id, m.public_status, m.public_snapshot_json,
+        a.action AS audit_action, a.actor_subject AS audit_actor_subject,
+        a.correlation_id AS audit_event_correlation_id,
+        a.publication_id AS audit_publication_id,
+        a.resulting_version AS audit_resulting_version, a.outcome AS audit_outcome
+      FROM publication_release_manifests m
+      JOIN publications p ON p.id = m.publication_id
+      LEFT JOIN audit_events a ON a.id = m.release_operation_id
+      WHERE p.lifecycle_state IN ('published', 'updated')
+        AND m.publication_version = (
+          SELECT MAX(latest.publication_version)
+          FROM publication_release_manifests latest
+          WHERE latest.publication_id = m.publication_id
+        )
+      ORDER BY m.released_at DESC, m.publication_id
+    `).all() as SqliteRow[];
+    return rows.map((row) => readPersistedReleaseManifest(row).publicSnapshot)
+      .find((publication) => publication.slug === slug);
+  }
+
+  async listReleaseManifests(publicationId: string): Promise<PublicationReleaseManifest[]> {
+    return this.database.prepare(`
+      SELECT m.release_operation_id, m.publication_id, m.publication_version, m.released_at,
+        m.publisher_subject_id, m.public_content_digest, m.evidence_validation_json,
+        m.audit_correlation_id, m.public_status, m.public_snapshot_json,
+        a.action AS audit_action, a.actor_subject AS audit_actor_subject,
+        a.correlation_id AS audit_event_correlation_id,
+        a.publication_id AS audit_publication_id,
+        a.resulting_version AS audit_resulting_version, a.outcome AS audit_outcome
+      FROM publication_release_manifests m
+      LEFT JOIN audit_events a ON a.id = m.release_operation_id
+      WHERE m.publication_id = ?
+      ORDER BY m.publication_version
+    `).all(publicationId).map((row) => readPersistedReleaseManifest(row));
   }
 
   async findByOriginIdentity(origin: OriginIdentity): Promise<Publication | undefined> {
@@ -744,6 +951,9 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
   async save(publication: Publication, options: SavePublicationOptions): Promise<Publication> {
     const parsed = PublicationSchema.parse(publication);
     const audit = AuditEventSchema.parse(options.auditEvent);
+    if (options.releaseManifest) {
+      validateReleaseManifest(parsed, audit, options.releaseManifest);
+    }
     this.database.exec("BEGIN IMMEDIATE");
     try {
       const current = this.database
@@ -796,6 +1006,26 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
       }
 
       this.writeAudit(audit);
+      if (options.releaseManifest) {
+        this.database.prepare(`
+          INSERT INTO publication_release_manifests (
+            release_operation_id, publication_id, publication_version, released_at,
+            publisher_subject_id, public_content_digest, evidence_validation_json,
+            audit_correlation_id, public_status, public_snapshot_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          options.releaseManifest.releaseOperationId,
+          options.releaseManifest.publicationId,
+          options.releaseManifest.publicationVersion,
+          options.releaseManifest.releasedAt,
+          options.releaseManifest.publisherSubjectId,
+          options.releaseManifest.publicContentDigest,
+          JSON.stringify(options.releaseManifest.evidenceValidation),
+          options.releaseManifest.auditCorrelationId,
+          options.releaseManifest.publicStatus,
+          JSON.stringify(options.releaseManifest.publicSnapshot),
+        );
+      }
       if (options.idempotency) {
         this.database
           .prepare(`
@@ -1166,13 +1396,6 @@ const defaultDatabasePath =
   process.env.MAYDAY_DATABASE_PATH ?? resolve(process.cwd(), "data", "mayday-dispatch.sqlite");
 let singletonRepository: PublicationRepository | undefined;
 
-function isPubliclyReadable(publication: Publication): boolean {
-  return (
-    publication.visibility === "public" &&
-    (publication.lifecycleState === "published" || publication.lifecycleState === "updated")
-  );
-}
-
 export function getPublicationRepository(): PublicationRepository {
   singletonRepository ??= new SqlitePublicationRepository(defaultDatabasePath, {
     migrate: true,
@@ -1181,13 +1404,9 @@ export function getPublicationRepository(): PublicationRepository {
 }
 
 export async function listPublications(): Promise<PublicPublication[]> {
-  const publications = await getPublicationRepository().list();
-  return publications.filter(isPubliclyReadable).map(toPublicPublication);
+  return getPublicationRepository().listPublicSnapshots();
 }
 
 export async function getPublicationBySlug(slug: string): Promise<PublicPublication | undefined> {
-  const publication = await getPublicationRepository().findBySlug(slug);
-  return publication && isPubliclyReadable(publication)
-    ? toPublicPublication(publication)
-    : undefined;
+  return getPublicationRepository().getPublicSnapshotBySlug(slug);
 }

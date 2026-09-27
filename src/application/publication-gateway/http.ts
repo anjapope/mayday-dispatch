@@ -8,6 +8,9 @@ import { resolveAuthenticatedApplicationActor } from "@/security/app-authenticat
 import { resolveEditorialSessionActor } from "@/security/editorial-session";
 import { logOperationalEvent } from "@/observability/operational-log";
 
+export const MAX_API_REQUEST_BYTES = 1024 * 1024;
+const requestBodyCache = new WeakMap<Request, Promise<string>>();
+
 function parseDevRoles(headers: Headers): GatewayRole[] {
   const roleHeader = headers.get("x-mayday-roles") ?? headers.get("x-mayday-role");
   if (!roleHeader) {
@@ -48,11 +51,50 @@ function devHeaderActor(request: Request): GatewayActor | undefined {
   };
 }
 
-async function cloneBodyText(request: Request): Promise<string> {
+function requestBodyText(request: Request): Promise<string> {
+  const cached = requestBodyCache.get(request);
+  if (cached) return cached;
+  const body = readBoundedBody(request);
+  requestBodyCache.set(request, body);
+  return body;
+}
+
+async function readBoundedBody(request: Request): Promise<string> {
+  const declaredLength = request.headers.get("content-length");
+  if (declaredLength !== null) {
+    const length = Number(declaredLength);
+    if (!Number.isSafeInteger(length) || length < 0) {
+      throw new GatewayError("VALIDATION_FAILED", "The request content length is invalid.");
+    }
+    if (length > MAX_API_REQUEST_BYTES) {
+      throw new GatewayError("REQUEST_TOO_LARGE", "API request bodies may not exceed 1 MiB.");
+    }
+  }
+  if (!request.body) return "";
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > MAX_API_REQUEST_BYTES) {
+      await reader.cancel();
+      throw new GatewayError("REQUEST_TOO_LARGE", "API request bodies may not exceed 1 MiB.");
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
   try {
-    return await request.clone().text();
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
-    return "";
+    throw new GatewayError("VALIDATION_FAILED", "The request body must use valid UTF-8 encoding.");
   }
 }
 
@@ -69,16 +111,19 @@ async function cloneBodyText(request: Request): Promise<string> {
  * the body internally to support signed-request verification.
  */
 export async function actorFromRequest(request: Request): Promise<GatewayActor | undefined> {
-  const rawBody = await cloneBodyText(request);
+  const rawBody = await requestBodyText(request);
   const applicationActor = resolveAuthenticatedApplicationActor(request, rawBody);
   if (applicationActor) {
-    return applicationActor;
+    return { ...applicationActor, authenticationMethod: "application-credential" };
   }
   const sessionActor = resolveEditorialSessionActor(request);
   if (sessionActor) {
-    return sessionActor;
+    return { ...sessionActor, authenticationMethod: "editorial-session" };
   }
-  return devHeaderActor(request);
+  const developmentActor = devHeaderActor(request);
+  return developmentActor
+    ? { ...developmentActor, authenticationMethod: "development" }
+    : undefined;
 }
 
 export function requestContextFromRequest(request: Request): GatewayRequestContext {
@@ -100,8 +145,9 @@ export function publicReaderActor(): GatewayActor {
 
 export async function readJsonBody(request: Request): Promise<unknown> {
   try {
-    return await request.json();
-  } catch {
+    return JSON.parse(await requestBodyText(request));
+  } catch (error) {
+    if (error instanceof GatewayError) throw error;
     throw new GatewayError("VALIDATION_FAILED", "The request body must be valid JSON.");
   }
 }

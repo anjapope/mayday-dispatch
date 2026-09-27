@@ -9,4 +9,5 @@ data/
 *.db
 .env*
 !.env.production.example
+!.env.staging.example
 /secrets/

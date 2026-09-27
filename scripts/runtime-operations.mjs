@@ -145,6 +145,12 @@ export function validateProductionEnvironment() {
   if (process.env.MAYDAY_TRUST_DEV_HEADERS === "true") {
     throw new Error("MAYDAY_TRUST_DEV_HEADERS must not be enabled in production.");
   }
+  if (
+    process.env.MAYDAY_PUBLIC_INDEXING_DISABLED !== undefined &&
+    !["true", "false"].includes(process.env.MAYDAY_PUBLIC_INDEXING_DISABLED)
+  ) {
+    throw new Error("MAYDAY_PUBLIC_INDEXING_DISABLED must be true or false when configured.");
+  }
 
   const credentials = configuredCredentials();
   for (const applicationName of REQUIRED_INTEGRATIONS) {

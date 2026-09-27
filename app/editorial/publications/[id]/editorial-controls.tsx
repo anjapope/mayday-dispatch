@@ -6,6 +6,10 @@ type Props = {
   publicationId: string;
   version: number;
   lifecycleState: string;
+  canAuthorizeRelease: boolean;
+  releasedAt?: string;
+  releaseVersion?: number;
+  releaseDigest?: string;
   title: string;
   subtitle?: string;
   excerpt: string;
@@ -29,8 +33,10 @@ const transitions: Record<string, string[]> = {
 
 export function EditorialControls(props: Props) {
   const [version, setVersion] = useState(props.version);
+  const [revisionType, setRevisionType] = useState<"correction" | "substantive-update">("correction");
   const [message, setMessage] = useState<string>();
   const [pending, setPending] = useState(false);
+  const publicRevision = props.lifecycleState === "published" || props.lifecycleState === "updated";
 
   async function request(path: string, method: "PATCH" | "POST", body: Record<string, unknown>) {
     setPending(true);
@@ -70,9 +76,26 @@ export function EditorialControls(props: Props) {
       setMessage("VALIDATION_FAILED: Citations and structured blocks must be valid JSON.");
       return;
     }
+    const correctionNote = form.get("correctionNote");
+    const updateNote = form.get("updateNote");
     await request(`/api/editorial/publications/${props.publicationId}`, "PATCH", {
       expectedVersion: version,
-      revisionSummary: "Editorial content update.",
+      revisionSummary: publicRevision
+        ? String(revisionType === "correction" ? correctionNote : updateNote)
+        : "Editorial content update.",
+      ...(publicRevision
+        ? revisionType === "correction"
+          ? {
+              revisionType,
+              correctionNote,
+              correctionExplanation: form.get("correctionExplanation") || undefined,
+            }
+          : {
+              revisionType,
+              updateNote,
+              updateExplanation: form.get("updateExplanation") || undefined,
+            }
+        : {}),
       title: form.get("title"),
       subtitle: form.get("subtitle") || undefined,
       excerpt: form.get("excerpt"),
@@ -90,6 +113,17 @@ export function EditorialControls(props: Props) {
     <section className="editorial-panel" aria-labelledby="editorial-controls-heading">
       <h2 id="editorial-controls-heading">Editorial controls</h2>
       <p>All actions use optimistic concurrency at version {version}.</p>
+      {publicRevision && (
+        <div className="editorial-release-status" role="status" aria-live="polite">
+          {props.releaseVersion === undefined
+            ? <p>This legacy publication has no Phase 12 release manifest. It is not publicly served until a publisher explicitly re-releases it.</p>
+            : <>
+                <p>Public release: version {props.releaseVersion}{props.releasedAt ? <> · <time dateTime={props.releasedAt}>{props.releasedAt}</time></> : null}.</p>
+                <p>SHA-256: <code>{props.releaseDigest}</code></p>
+                {props.releaseVersion !== version && <p role="alert">Version {version} is staged and private. A publisher must review readiness and authorize its release before these changes become public.</p>}
+              </>}
+        </div>
+      )}
       <form className="editorial-form" onSubmit={submitEdit}>
         <label>Title<input name="title" defaultValue={props.title} required /></label>
         <label>Subtitle<input name="subtitle" defaultValue={props.subtitle} /></label>
@@ -102,16 +136,43 @@ export function EditorialControls(props: Props) {
         <label>Public methodology<textarea name="methodology" defaultValue={props.methodology} /></label>
         <label>Public caveat<textarea name="caveat" defaultValue={props.caveat} /></label>
         <label>Citations (JSON)<textarea name="sources" defaultValue={JSON.stringify(props.sources, null, 2)} required /></label>
+        {publicRevision && (
+          <fieldset>
+            <legend>Revision classification and public notice</legend>
+            <label>Revision type
+              <select
+                name="revisionType"
+                value={revisionType}
+                onChange={(event) => setRevisionType(
+                  event.target.value === "substantive-update" ? "substantive-update" : "correction",
+                )}
+              >
+                <option value="correction">Correction</option>
+                <option value="substantive-update">Substantive update</option>
+              </select>
+            </label>
+            {revisionType === "correction" ? <>
+              <label>Correction note<textarea name="correctionNote" required /></label>
+              <label>Correction explanation<textarea name="correctionExplanation" /></label>
+            </> : <>
+              <label>Update note<textarea name="updateNote" required /></label>
+              <label>Update explanation<textarea name="updateExplanation" /></label>
+            </>}
+          </fieldset>
+        )}
         <button disabled={pending} type="submit">Save editorial edit</button>
       </form>
+      {publicRevision && <p>Saving a correction or substantive update only stages a revision. Nothing becomes public until a publisher or administrator explicitly authorizes release.</p>}
       <div className="lifecycle-actions">
         {transitions[props.lifecycleState]?.map((to) => (
-          <button key={to} disabled={pending} onClick={() => request(
+          <button key={to} disabled={pending || ((to === "published" || to === "updated") && !props.canAuthorizeRelease)} onClick={() => request(
             `/api/editorial/publications/${props.publicationId}/transition`,
             "POST",
             { to, expectedVersion: version, revisionSummary: `Editorial transition to ${to}.`, ...(to === "archived" ? { reason: "Archived by Dispatch editorial control." } : {}) },
           )} type="button">
-            Move to {to}
+            {to === "published" && "Authorize initial public release"}
+            {to === "updated" && "Authorize release of this revision"}
+            {to !== "published" && to !== "updated" && `Move to ${to}`}
           </button>
         ))}
       </div>

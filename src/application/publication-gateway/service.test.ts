@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import type { GatewayActor } from "@/application/publication-gateway/authorization";
 import { PublicationGatewayService } from "@/application/publication-gateway/service";
 import { InMemoryEvidenceRegistry, type RegisteredEvidence } from "@/evidence/registry";
@@ -10,7 +11,11 @@ const researchActor: GatewayActor = {
   originatingApplication: "Research Studio",
 };
 const editorActor: GatewayActor = { subjectId: "editor-1", roles: ["editor"] };
-const publisherActor: GatewayActor = { subjectId: "publisher-1", roles: ["publisher"] };
+const publisherActor: GatewayActor = {
+  subjectId: "publisher-1",
+  roles: ["publisher"],
+  authenticationMethod: "editorial-session",
+};
 const mayday3Actor: GatewayActor = {
   subjectId: "mayday3-service",
   roles: ["external-application"],
@@ -294,6 +299,53 @@ describe("PublicationGatewayService Phase Three", () => {
       publisherActor,
       context,
     );
+    await expect(
+      service.transition(
+        created.publication.id,
+        { to: "updated", expectedVersion: published.publication.revision.version },
+        { ...publisherActor, authenticationMethod: "application-credential" },
+        context,
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(await repository.listReleaseManifests(created.publication.id)).toHaveLength(1);
+
+    const originalPublic = await service.getPublicBySlug("research-studio-heat-intake", {
+      subjectId: "public",
+      roles: ["public-reader"],
+    });
+    await expect(service.update(
+      created.publication.id,
+      {
+        body: ["Correction without a public note."],
+        expectedVersion: published.publication.revision.version,
+        revisionType: "correction",
+      },
+      editorActor,
+      context,
+    )).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    await expect(service.update(
+      created.publication.id,
+      {
+        body: ["Attempt to conceal a correction."],
+        expectedVersion: published.publication.revision.version,
+        revisionType: "correction",
+        correctionNote: "The date was corrected.",
+        correctionPublic: false,
+      },
+      editorActor,
+      context,
+    )).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    await expect(service.update(
+      created.publication.id,
+      {
+        visibility: "private",
+        expectedVersion: published.publication.revision.version,
+        revisionType: "correction",
+        correctionNote: "The release must be explicitly archived instead.",
+      },
+      editorActor,
+      context,
+    )).rejects.toMatchObject({ code: "CONFLICT" });
     const corrected = await service.update(
       created.publication.id,
       {
@@ -327,15 +379,57 @@ describe("PublicationGatewayService Phase Three", () => {
     expect((await repository.list()).some((item) => item.id === created.publication.id)).toBe(true);
     expect(repository.auditEvents.map((event) => event.revisionType)).toContain("correction");
     expect(repository.auditEvents.map((event) => event.revisionType)).toContain("substantive-update");
+
+    const stillReleased = await service.getPublicBySlug("research-studio-heat-intake", {
+      subjectId: "public",
+      roles: ["public-reader"],
+    });
+    expect(stillReleased.publication).toEqual(originalPublic.publication);
+    const releasedUpdate = await service.transition(
+      created.publication.id,
+      { to: "updated", expectedVersion: updated.publication.revision.version },
+      publisherActor,
+      context,
+    );
+    const manifests = await repository.listReleaseManifests(created.publication.id);
+    expect(manifests).toHaveLength(2);
+    expect(manifests[1]).toMatchObject({
+      publicationId: created.publication.id,
+      publicationVersion: releasedUpdate.publication.revision.version,
+      publisherSubjectId: publisherActor.subjectId,
+      auditCorrelationId: context.correlationId,
+      publicStatus: "updated",
+      evidenceValidation: { passed: true },
+      publicSnapshot: { body: ["Corrected evidence synthesis."], title: "New analysis" },
+    });
+    expect(manifests[1]?.publicContentDigest).toBe(
+      createHash("sha256")
+        .update(JSON.stringify(manifests[1]?.publicSnapshot), "utf8")
+        .digest("hex"),
+    );
+    expect(JSON.stringify(manifests[1])).not.toContain("stableObjectId");
+    const archived = await service.transition(
+      created.publication.id,
+      {
+        to: "archived",
+        expectedVersion: releasedUpdate.publication.revision.version,
+        revisionSummary: "Withdraw the public publication.",
+        reason: "Editorial withdrawal.",
+      },
+      editorActor,
+      context,
+    );
+    expect(archived.publication.lifecycleState).toBe("archived");
+    expect(await repository.getPublicSnapshotBySlug("research-studio-heat-intake")).toBeUndefined();
   });
 
   it("blocks update-path public releases during publication lockdown", async () => {
     const { service, repository } = createHarness();
-    const publish = async (slug: string, visibility: "public" | "internal") => {
+    const publish = async (slug: string) => {
       const created = await service.createDraft(
         researchDraft({
           slug,
-          visibility,
+          visibility: "public",
           sources: [publicSource],
           origin: {
             kind: "academic-publication",
@@ -368,8 +462,36 @@ describe("PublicationGatewayService Phase Three", () => {
         context,
       );
     };
-    const internal = await publish("lockdown-visibility-check", "internal");
-    const publicRelease = await publish("lockdown-update-check", "public");
+    const internalDraft = await service.createDraft(
+      researchDraft({
+        slug: "lockdown-visibility-check",
+        visibility: "internal",
+        sources: [publicSource],
+        origin: {
+          kind: "academic-publication",
+          label: "Research Studio",
+          url: "https://example.org/research/phase-eleven-internal-lockdown",
+          originatingApplication: "Research Studio",
+          originatingProject: "Climate Desk",
+          stableObjectId: "research:lockdown-internal",
+        },
+      }),
+      editorActor,
+      context,
+    );
+    const internalReview = await service.transition(
+      internalDraft.publication.id,
+      { to: "review", expectedVersion: internalDraft.publication.revision.version },
+      editorActor,
+      context,
+    );
+    const internal = await service.transition(
+      internalDraft.publication.id,
+      { to: "ready", expectedVersion: internalReview.publication.revision.version },
+      editorActor,
+      context,
+    );
+    const publicRelease = await publish("lockdown-update-check");
     await repository.setPublicationLockdown(
       true,
       { subjectId: "operator-1", roles: ["operator"] },
@@ -378,14 +500,13 @@ describe("PublicationGatewayService Phase Three", () => {
     );
 
     await expect(
-      service.update(
+      service.transition(
         internal.publication.id,
         {
+          to: "published",
           expectedVersion: internal.publication.revision.version,
-          revisionType: "correction",
-          visibility: "public",
         },
-        editorActor,
+        publisherActor,
         context,
       ),
     ).rejects.toMatchObject({ code: "PUBLICATION_LOCKED" });
@@ -396,13 +517,14 @@ describe("PublicationGatewayService Phase Three", () => {
           expectedVersion: publicRelease.publication.revision.version,
           revisionType: "substantive-update",
           title: "Lockdown bypass",
+          updateNote: "A substantive update must be released after review.",
         },
         editorActor,
         context,
       ),
     ).rejects.toMatchObject({ code: "PUBLICATION_LOCKED" });
 
-    expect((await repository.findById(internal.publication.id))?.visibility).toBe("internal");
+    expect((await repository.findById(internal.publication.id))?.lifecycleState).toBe("ready");
     expect((await repository.findById(publicRelease.publication.id))?.lifecycleState).toBe("published");
   });
 

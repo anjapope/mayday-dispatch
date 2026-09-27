@@ -133,6 +133,22 @@ export function resolveConfiguredCredentialActor(
   return credential ? toActor(credential) : undefined;
 }
 
+export function resolveConfiguredEditorialCredentialFingerprint(
+  subjectId: string,
+  applicationName: string,
+): string | undefined {
+  const credential = loadCredentials().find(
+    (candidate) =>
+      candidate.subjectId === subjectId && candidate.applicationName === applicationName,
+  );
+  if (!credential) return undefined;
+  return sha256Hex(JSON.stringify({
+    tokenHash: credential.tokenHash ?? "",
+    hmacSecret: credential.hmacSecret ?? "",
+    roles: [...credential.roles].sort(),
+  }));
+}
+
 function resolveBearerToken(
   request: Request,
   credentials: readonly ApplicationCredential[],

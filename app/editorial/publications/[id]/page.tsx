@@ -21,6 +21,8 @@ export default async function EditorialPublicationPage({ params }: Props) {
   }
   const { publication } = await getPublicationGatewayService().getPublication(id, actor);
   const repository = getPublicationRepository();
+  const releaseManifests = await repository.listReleaseManifests?.(id) ?? [];
+  const latestRelease = releaseManifests.at(-1);
   const revisions = await repository.listRevisionHistory?.(id) ?? [];
   const lifecycleHistory = await repository.listLifecycleHistory?.(id) ?? [];
   const readiness = validatePublicationReadiness(publication);
@@ -52,6 +54,10 @@ export default async function EditorialPublicationPage({ params }: Props) {
         publicationId={publication.id}
         version={publication.revision.version}
         lifecycleState={publication.lifecycleState}
+        canAuthorizeRelease={actor.roles.some((role) => role === "publisher" || role === "admin")}
+        releasedAt={latestRelease?.releasedAt}
+        releaseVersion={latestRelease?.publicationVersion}
+        releaseDigest={latestRelease?.publicContentDigest}
         title={publication.title}
         subtitle={publication.subtitle}
         excerpt={publication.excerpt}

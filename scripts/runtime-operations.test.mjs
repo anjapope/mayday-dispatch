@@ -22,6 +22,7 @@ const environmentNames = [
   "MAYDAY_APPLICATION_CREDENTIALS_FILE",
   "MAYDAY_TRUST_DEV_HEADERS",
   "MAYDAY_PUBLIC_BASE_URL",
+  "MAYDAY_PUBLIC_INDEXING_DISABLED",
 ];
 const originalEnvironment = Object.fromEntries(
   environmentNames.map((name) => [name, process.env[name]]),
@@ -66,8 +67,12 @@ describe("production runtime operations", () => {
     process.env.MAYDAY_APPLICATION_CREDENTIALS = JSON.stringify(validCredentials());
     process.env.MAYDAY_TRUST_DEV_HEADERS = "false";
     process.env.MAYDAY_PUBLIC_BASE_URL = "https://dispatch.example.test";
+    process.env.MAYDAY_PUBLIC_INDEXING_DISABLED = "true";
 
     expect(validateProductionEnvironment().databasePath).toBe(resolve(process.env.MAYDAY_DATABASE_PATH));
+    process.env.MAYDAY_PUBLIC_INDEXING_DISABLED = "invalid";
+    expect(() => validateProductionEnvironment()).toThrow(/MAYDAY_PUBLIC_INDEXING_DISABLED/);
+    process.env.MAYDAY_PUBLIC_INDEXING_DISABLED = "true";
 
     process.env.MAYDAY_APPLICATION_CREDENTIALS = JSON.stringify(
       validCredentials().map((credential) =>

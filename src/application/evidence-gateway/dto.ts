@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PublicUrlSchema } from "@/domain/content-blocks";
 import { CitationSchema, EvidenceVisibilitySchema } from "@/domain/publication";
 import {
   EvidenceProcessingStatusSchema,
@@ -33,8 +34,8 @@ export const RegisterEvidenceRequestSchema = z
     checksumAlgorithm: z.literal("sha256").default("sha256"),
     processor: z.string().trim().min(1).optional(),
     status: EvidenceProcessingStatusSchema,
-    publicUrl: z.string().url().optional(),
-    sourceUrl: z.string().url().optional(),
+    publicUrl: PublicUrlSchema.optional(),
+    sourceUrl: PublicUrlSchema.optional(),
     locator: z.string().trim().min(1).optional(),
     citation: CitationSchema.optional(),
     registeredAt: z.string().datetime({ offset: true }).optional(),

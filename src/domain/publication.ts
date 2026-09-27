@@ -1,6 +1,8 @@
 import { z } from "zod";
 import {
   PublicationContentBlocksSchema,
+  PublicationPlainTextSchema,
+  PublicUrlSchema,
   sanitizePublicBlocks,
   type PublicationContentBlock,
 } from "@/domain/content-blocks";
@@ -59,22 +61,22 @@ export const PublicationVisibilitySchema = EvidenceVisibilitySchema;
 
 export const CitationSchema = z.object({
   id: z.string().uuid(),
-  title: z.string().trim().min(1),
-  subtitle: z.string().trim().min(1).optional(),
-  authors: z.array(z.string().trim().min(1)).min(1),
-  publisher: z.string().trim().min(1).optional(),
+  title: PublicationPlainTextSchema,
+  subtitle: PublicationPlainTextSchema.optional(),
+  authors: z.array(PublicationPlainTextSchema).min(1),
+  publisher: PublicationPlainTextSchema.optional(),
   publishedAt: z.string().date().optional(),
-  url: z.string().url().optional(),
+  url: PublicUrlSchema.optional(),
   doi: z.string().regex(/^10\.\d{4,9}\/[-._;()/:A-Z0-9]+$/i).optional(),
 });
 
 export const EvidenceReferenceSchema = z
   .object({
     id: z.string().uuid(),
-    title: z.string().trim().min(1),
-    description: z.string().trim().min(1).optional(),
-    url: z.string().url().optional(),
-    locator: z.string().trim().min(1).optional(),
+    title: PublicationPlainTextSchema,
+    description: PublicationPlainTextSchema.optional(),
+    url: PublicUrlSchema.optional(),
+    locator: PublicationPlainTextSchema.optional(),
     visibility: EvidenceVisibilitySchema,
     mediaType: z.string().trim().min(1).optional(),
     source: z.string().trim().min(1).optional(),
@@ -118,7 +120,7 @@ export const PublicationOriginSchema = z
       "partner-submission",
     ]),
     label: z.string().trim().min(1),
-    url: z.string().url().optional(),
+    url: PublicUrlSchema.optional(),
     originatingApplication: z.string().trim().min(1),
     originatingProject: z.string().trim().min(1),
     stableObjectId: z
@@ -158,7 +160,7 @@ export type PublicationExtensions = z.infer<typeof PublicationExtensionsSchema>;
 export const RevisionMetadataSchema = z.object({
   version: z.number().int().positive(),
   updatedAt: z.string().datetime({ offset: true }),
-  summary: z.string().trim().min(1),
+  summary: PublicationPlainTextSchema,
   previousVersion: z.number().int().positive().optional(),
   revisionType: z.enum([
     "upstream-synchronization",
@@ -179,14 +181,14 @@ export const PublicationSchema = z
     type: PublicationTypeSchema,
     lifecycleState: LifecycleStateSchema,
     visibility: PublicationVisibilitySchema,
-    title: z.string().trim().min(1),
-    subtitle: z.string().trim().min(1).optional(),
-    excerpt: z.string().trim().min(1),
-    body: z.array(z.string().trim().min(1)).min(1),
+    title: PublicationPlainTextSchema,
+    subtitle: PublicationPlainTextSchema.optional(),
+    excerpt: PublicationPlainTextSchema,
+    body: z.array(PublicationPlainTextSchema).min(1),
     blocks: PublicationContentBlocksSchema.default([]),
     publishedAt: z.string().date(),
     readingTimeMinutes: z.number().int().positive(),
-    tags: z.array(z.string().trim().min(1)).default([]),
+    tags: z.array(PublicationPlainTextSchema).default([]),
     revision: RevisionMetadataSchema,
     provenance: ProvenanceSchema,
     extensions: PublicationExtensionsSchema,
@@ -229,10 +231,10 @@ export type PublicEvidence = {
 
 export const PublicNoticeSchema = z.object({
   kind: z.enum(["correction", "update"]),
-  note: z.string().trim().min(1),
+  note: PublicationPlainTextSchema,
   timestamp: z.string().datetime({ offset: true }),
   version: z.number().int().positive(),
-  explanation: z.string().trim().min(1).optional(),
+  explanation: PublicationPlainTextSchema.optional(),
 });
 
 export type PublicNotice = z.infer<typeof PublicNoticeSchema>;

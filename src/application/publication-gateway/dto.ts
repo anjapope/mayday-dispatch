@@ -8,7 +8,11 @@ import {
   PublicationVisibilitySchema,
   RevisionMetadataSchema,
 } from "@/domain/publication";
-import { PublicationContentBlocksSchema } from "@/domain/content-blocks";
+import {
+  PublicationContentBlocksSchema,
+  PublicationPlainTextSchema,
+  PublicUrlSchema,
+} from "@/domain/content-blocks";
 import { GatewayErrorCodeSchema } from "@/application/publication-gateway/errors";
 
 const SlugSchema = z
@@ -18,14 +22,14 @@ const SlugSchema = z
 const DraftContentSchema = z.object({
   slug: SlugSchema,
   type: PublicationTypeSchema,
-  title: z.string().trim().min(1),
-  subtitle: z.string().trim().min(1).optional(),
-  excerpt: z.string().trim().min(1),
-  body: z.array(z.string().trim().min(1)).min(1),
+  title: PublicationPlainTextSchema,
+  subtitle: PublicationPlainTextSchema.optional(),
+  excerpt: PublicationPlainTextSchema,
+  body: z.array(PublicationPlainTextSchema).min(1),
   blocks: PublicationContentBlocksSchema.optional(),
   publishedAt: z.string().date().optional(),
   readingTimeMinutes: z.number().int().positive(),
-  tags: z.array(z.string().trim().min(1)).default([]),
+  tags: z.array(PublicationPlainTextSchema).default([]),
   visibility: PublicationVisibilitySchema.default("internal"),
   sources: z.array(CitationSchema).default([]),
 });
@@ -39,7 +43,7 @@ export const PublicationOriginInputSchema = z
       "partner-submission",
     ]),
     label: z.string().trim().min(1),
-    url: z.string().url().optional(),
+    url: PublicUrlSchema.optional(),
     originatingApplication: z.string().trim().min(1),
     originatingProject: z.string().trim().min(1),
     stableObjectId: z
@@ -81,12 +85,12 @@ export const UpdatePublicationRequestSchema = DraftContentSchema.partial()
     extensions: PublicationExtensionsSchema.optional(),
     revisionSummary: z.string().trim().min(1).default("Editorial update."),
     revisionType: z.enum(["editorial", "correction", "substantive-update"]).optional(),
-    correctionNote: z.string().trim().min(1).optional(),
-    correctionExplanation: z.string().trim().min(1).optional(),
-    correctionPublic: z.boolean().optional(),
-    updateNote: z.string().trim().min(1).optional(),
-    updateExplanation: z.string().trim().min(1).optional(),
-    updatePublic: z.boolean().optional(),
+    correctionNote: PublicationPlainTextSchema.optional(),
+    correctionExplanation: PublicationPlainTextSchema.optional(),
+    correctionPublic: z.literal(true).optional(),
+    updateNote: PublicationPlainTextSchema.optional(),
+    updateExplanation: PublicationPlainTextSchema.optional(),
+    updatePublic: z.literal(true).optional(),
     methodology: z.string().trim().min(1).optional(),
     caveat: z.string().trim().min(1).optional(),
     expectedVersion: z.number().int().positive(),
@@ -98,6 +102,34 @@ export const UpdatePublicationRequestSchema = DraftContentSchema.partial()
         (key) => key !== "revisionSummary" && key !== "expectedVersion",
       ),
     "At least one publication field must be provided.",
+  )
+  .refine(
+    (input) => input.revisionType !== "correction" || Boolean(input.correctionNote),
+    {
+      message: "A public correction note is required for correction revisions.",
+      path: ["correctionNote"],
+    },
+  )
+  .refine(
+    (input) => input.revisionType !== "substantive-update" || Boolean(input.updateNote),
+    {
+      message: "A public update note is required for substantive revisions.",
+      path: ["updateNote"],
+    },
+  )
+  .refine(
+    (input) => input.revisionType === "correction" || input.correctionNote === undefined,
+    {
+      message: "Correction notes require a correction revision.",
+      path: ["revisionType"],
+    },
+  )
+  .refine(
+    (input) => input.revisionType === "substantive-update" || input.updateNote === undefined,
+    {
+      message: "Update notes require a substantive revision.",
+      path: ["revisionType"],
+    },
   );
 
 export const AttachEvidenceRequestSchema = z
@@ -152,9 +184,9 @@ export const GatewayErrorResponseSchema = z
 export const PublicEvidenceResponseSchema = z
   .object({
     id: z.string().uuid(),
-    title: z.string(),
-    description: z.string().optional(),
-    url: z.string().url().optional(),
+    title: PublicationPlainTextSchema,
+    description: PublicationPlainTextSchema.optional(),
+    url: PublicUrlSchema.optional(),
     citation: CitationSchema.optional(),
   })
   .strict();
@@ -167,27 +199,27 @@ export const PublicPublicationResponseSchema = z
         slug: SlugSchema,
         type: PublicationTypeSchema,
         lifecycleState: z.enum(["published", "updated"]),
-        title: z.string(),
-        subtitle: z.string().optional(),
-        excerpt: z.string(),
-        body: z.array(z.string()),
+        title: PublicationPlainTextSchema,
+        subtitle: PublicationPlainTextSchema.optional(),
+        excerpt: PublicationPlainTextSchema,
+        body: z.array(PublicationPlainTextSchema),
         blocks: PublicationContentBlocksSchema,
         publishedAt: z.string().date(),
         readingTimeMinutes: z.number().int().positive(),
-        tags: z.array(z.string()),
+        tags: z.array(PublicationPlainTextSchema),
         revision: RevisionMetadataSchema,
         sources: z.array(CitationSchema),
         evidence: z.array(PublicEvidenceResponseSchema),
-        methodology: z.string().optional(),
-        caveat: z.string().optional(),
-        seriesId: z.string().optional(),
-        reportingPeriod: z.string().optional(),
+        methodology: PublicationPlainTextSchema.optional(),
+        caveat: PublicationPlainTextSchema.optional(),
+        seriesId: PublicationPlainTextSchema.optional(),
+        reportingPeriod: PublicationPlainTextSchema.optional(),
         notice: z.object({
           kind: z.enum(["correction", "update"]),
-          note: z.string(),
+          note: PublicationPlainTextSchema,
           timestamp: z.string().datetime({ offset: true }),
           version: z.number().int().positive(),
-          explanation: z.string().optional(),
+          explanation: PublicationPlainTextSchema.optional(),
         }).optional(),
         relatedPublicationIds: z.array(z.string()).optional(),
       })

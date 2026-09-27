@@ -30,6 +30,26 @@ describe("PublicationSchema", () => {
     expect(PublicationSchema.safeParse(invalid).success).toBe(false);
   });
 
+  it("rejects unsafe public prose, citation URLs, and revision summaries", () => {
+    const publication = publications[0];
+    if (!publication) throw new Error("A publication fixture is required.");
+    expect(PublicationSchema.safeParse({
+      ...publication,
+      body: ["<script>alert(1)</script>"],
+    }).success).toBe(false);
+    expect(PublicationSchema.safeParse({
+      ...publication,
+      sources: [{
+        ...publication.sources[0],
+        url: "javascript:alert(1)",
+      }],
+    }).success).toBe(false);
+    expect(PublicationSchema.safeParse({
+      ...publication,
+      revision: { ...publication.revision, summary: "Stored at C:\\private\\source.pdf" },
+    }).success).toBe(false);
+  });
+
   it("requires a valid publication visibility classification", () => {
     const invalid = { ...publications[0], visibility: "partners-only" };
 

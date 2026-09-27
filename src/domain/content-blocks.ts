@@ -1,13 +1,26 @@
 import { z } from "zod";
 
 const BlockIdSchema = z.string().uuid();
-const TextSchema = z.string().trim().min(1).max(20_000);
-const ShortTextSchema = z.string().trim().min(1).max(1_000);
-const PublicUrlSchema = z.string().url().refine((value) => {
+const unsafeTextPattern = /<\/?\s*[a-z][^>]*>|(?:^|[\s"'(])(?:[a-z]:[\\/]|\\\\[^\\]+\\|\/(?:home|root|tmp|var|mnt|users|private|etc|opt|srv)\/)/i;
+export const PublicationPlainTextSchema = z.string().trim().min(1).max(20_000).refine(
+  (value) => !unsafeTextPattern.test(value),
+  "Markup and internal filesystem paths are not permitted in publication text.",
+);
+const TextSchema = PublicationPlainTextSchema;
+const ShortTextSchema = z.string().trim().min(1).max(1_000).refine(
+  (value) => !unsafeTextPattern.test(value),
+  "Markup and internal filesystem paths are not permitted in publication text.",
+);
+export const PublicUrlSchema = z.string().url().refine((value) => {
   const url = new URL(value);
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
   return ["http:", "https:"].includes(url.protocol) &&
-    url.hostname !== "localhost" &&
-    !url.hostname.endsWith(".local");
+    !url.username &&
+    !url.password &&
+    !/^(?:\d{1,3}\.){3}\d{1,3}$/.test(hostname) &&
+    !hostname.includes(":") &&
+    hostname !== "localhost" &&
+    !/\.(?:localhost|local|internal|lan|home\.arpa|test|invalid|onion)$/.test(hostname);
 }, "Use a public HTTP(S) URL.");
 const EvidenceIdSchema = z.string().uuid();
 const CitationIdSchema = z.string().uuid();
@@ -55,7 +68,10 @@ export const TableBlockSchema = BlockBaseSchema.extend({
   type: z.literal("table"),
   caption: ShortTextSchema,
   columns: z.array(z.object({ key: z.string().trim().regex(/^[a-z][a-z0-9_-]*$/), label: ShortTextSchema }).strict()).min(1).max(20),
-  rows: z.array(z.array(z.string().trim().max(4_000))).max(200),
+  rows: z.array(z.array(z.string().trim().max(4_000).refine(
+    (value) => !unsafeTextPattern.test(value),
+    "Markup and internal filesystem paths are not permitted in publication text.",
+  ))).max(200),
   source: ShortTextSchema.optional(),
   citationId: CitationIdSchema.optional(),
   evidenceId: EvidenceIdSchema.optional(),

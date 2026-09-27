@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const GatewayErrorCodeSchema = z.enum([
   "VALIDATION_FAILED",
+  "REQUEST_TOO_LARGE",
   "UNAUTHORIZED",
   "FORBIDDEN",
   "NOT_FOUND",
@@ -23,6 +24,7 @@ export type GatewayErrorCode = z.infer<typeof GatewayErrorCodeSchema>;
 
 const errorStatuses: Record<GatewayErrorCode, number> = {
   VALIDATION_FAILED: 400,
+  REQUEST_TOO_LARGE: 413,
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
   NOT_FOUND: 404,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PublicationPlainTextSchema, PublicUrlSchema } from "@/domain/content-blocks";
 import { CitationSchema, EvidenceVisibilitySchema } from "@/domain/publication";
 
 export const EvidenceProcessingStatusSchema = z.enum([
@@ -18,8 +19,8 @@ const SafeFilenameSchema = z.string().trim().min(1).refine(
 export const RegisteredEvidenceSchema = z
   .object({
     id: z.string().uuid(),
-    title: z.string().trim().min(1),
-    description: z.string().trim().min(1).optional(),
+    title: PublicationPlainTextSchema,
+    description: PublicationPlainTextSchema.optional(),
     mediaType: z.string().trim().min(1),
     source: z.string().trim().min(1),
     provenance: z.string().trim().min(1),
@@ -28,8 +29,8 @@ export const RegisteredEvidenceSchema = z
     checksumAlgorithm: z.literal("sha256").default("sha256"),
     processor: z.string().trim().min(1).optional(),
     status: EvidenceProcessingStatusSchema,
-    publicUrl: z.string().url().optional(),
-    sourceUrl: z.string().url().optional(),
+    publicUrl: PublicUrlSchema.optional(),
+    sourceUrl: PublicUrlSchema.optional(),
     locator: z.string().trim().min(1).optional(),
     citation: CitationSchema.optional(),
     registeredAt: z.string().datetime({ offset: true }),

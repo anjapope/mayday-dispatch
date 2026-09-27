@@ -1,7 +1,9 @@
 # Mayday Dispatch
 
 Mayday Dispatch is a domain-first publishing service for evidence-led research,
-OSINT reports, and operational dispatches. Phase Seven makes Mayday3 a
+OSINT reports, and operational dispatches. **Phase Twelve is launch hardening,
+not launch authorization.** Do not deploy publicly, publish production
+content, or enable automated publication as a result of this work. Phase Seven makes Mayday3 a
 controlled, versioned evidence provider while preserving Dispatch's editorial
 authority. Phase Six completes Dispatch's
 editorial control room: authenticated intake and review, versioned editorial
@@ -18,7 +20,7 @@ Studio and Overwatch remain draft-only upstream clients of the same gateway.
 ## Setup
 
 ```bash
-npm install
+npm ci
 npm run db:migrate
 npm run dev
 ```
@@ -80,13 +82,19 @@ public internet.
 - Editors make version-checked, auditable changes to publication-facing
   content; origin identity and upstream assessment provenance remain immutable.
 - Only publisher/admin actors may explicitly transition a ready publication to
-  `published`. Readiness errors block that operation; warnings remain advisory.
+  `published` through an authenticated editorial session. Readiness errors
+  block that operation; warnings remain advisory. A `ready` record is private.
+- Each public release is an atomic, immutable manifest and public-safe
+  snapshot bound to one revision, publisher, digest, evidence validation, and
+  audit correlation. Later edits stay staged; corrections and substantive
+  updates require public notes and a separate publisher release. Missing
+  Phase Twelve manifests on legacy records fail closed.
 - The editorial preview and public route share the same safe projection.
   Internal provenance, Overwatch assessment rationale, and restricted evidence
   are never rendered publicly.
 - Corrections, substantive updates, lifecycle transitions, and archives are
   distinct revision/audit events. Archives retain history and have no hard
-  delete or withdrawal workflow.
+  delete; archiving is the explicit public withdrawal workflow.
 - Mayday3 can register and version processed evidence metadata only. It cannot
   publish, alter editorial content, transition publications, or expose private
   evidence. Evidence associations remain separate, authorized publication
@@ -109,5 +117,11 @@ See [architecture](docs/architecture.md), [gateway](docs/gateway.md),
 [operations](docs/operations.md), and
 [Research Studio integration](docs/research-studio-integration.md), and
 [Overwatch integration](docs/overwatch-integration.md).
+- Release governance and legacy migration are in
+  [docs/publication-release.md](docs/publication-release.md); internal policy,
+  security findings, and launch gates are in
+  [docs/editorial-standards.md](docs/editorial-standards.md),
+  [docs/security-review.md](docs/security-review.md), and
+  [docs/launch-readiness.md](docs/launch-readiness.md).
 - Editorial workspace: authenticated queue, readiness review, evidence inspection, and lifecycle
   operations are documented in [docs/editorial-workspace.md](docs/editorial-workspace.md).

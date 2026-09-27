@@ -25,6 +25,7 @@ const mayday3Token = "mayday3-machine-token";
 const editorialToken = "dispatch-editorial-machine-token";
 const operatorToken = "dispatch-operator-machine-token";
 const sessionSecret = "phase-eleven-integration-session-key-32-bytes";
+const integrationOrigin = "https://dispatch.integration.test";
 
 const evidence = {
   id: "22222222-2222-4222-8222-222222222222",
@@ -172,6 +173,40 @@ function routeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Respo
   throw new Error(`Unhandled integration request: ${request.method} ${url.pathname}`);
 }
 
+async function releaseWithEditorialSession(
+  publicationId: string,
+  expectedVersion: number,
+  revisionSummary: string,
+  cookie?: string,
+): Promise<Response> {
+  let sessionCookie = cookie;
+  if (!sessionCookie) {
+    const signIn = await routeFetch(`${integrationOrigin}/api/editorial/session`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${editorialToken}` },
+    });
+    if (!signIn.ok) {
+      throw new Error(`Editorial integration sign-in failed with HTTP ${signIn.status}.`);
+    }
+    sessionCookie = signIn.headers.get("set-cookie")?.split(";")[0];
+  }
+  if (!sessionCookie) {
+    throw new Error("Editorial integration sign-in did not issue a session cookie.");
+  }
+  return routeFetch(
+    `${integrationOrigin}/api/editorial/publications/${publicationId}/transition`,
+    {
+      method: "POST",
+      headers: {
+        cookie: sessionCookie,
+        origin: integrationOrigin,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ to: "published", expectedVersion, revisionSummary }),
+    },
+  );
+}
+
 beforeAll(async () => {
   rmSync(databasePath, { force: true });
   const database = new DatabaseSync(databasePath);
@@ -315,6 +350,12 @@ describe("Research Studio HTTP to Dispatch SQLite integration", () => {
       body: JSON.stringify(evidence),
     });
     expect(invalidCredential.status).toBe(401);
+    const oversizedRequest = await routeFetch("https://dispatch.integration.test/api/evidence", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "x".repeat(1024 * 1024 + 1),
+    });
+    expect(oversizedRequest.status).toBe(413);
 
     const created = await researchClient.createDraft(draft, {
       idempotencyKey: "research-http-create-1",
@@ -375,11 +416,12 @@ describe("Research Studio HTTP to Dispatch SQLite integration", () => {
       expectedVersion: 4,
       revisionSummary: "Mark ready.",
     } satisfies TransitionPublicationRequest);
-    await editorialClient.requestLifecycle(created.publication.id, {
-      to: "published",
-      expectedVersion: ready.originLink.version,
-      revisionSummary: "Publish approved dispatch.",
-    } satisfies TransitionPublicationRequest);
+    const released = await releaseWithEditorialSession(
+      created.publication.id,
+      ready.originLink.version,
+      "Publish approved dispatch.",
+    );
+    expect(released.status).toBe(200);
     const publicResponse = await routeFetch(
       "https://dispatch.integration.test/api/public/publications/research-studio-http-integration",
     );
@@ -398,6 +440,27 @@ describe("Research Studio HTTP to Dispatch SQLite integration", () => {
       visibility: "public",
     });
     firstRepository.close();
+    const restartedRepository = new SqlitePublicationRepository(databasePath, { migrate: false });
+    expect(await restartedRepository.getPublicSnapshotBySlug("research-studio-http-integration"))
+      .toMatchObject({ id: created.publication.id, revision: { version: 6 } });
+    const releaseManifests = await restartedRepository.listReleaseManifests(created.publication.id);
+    expect(releaseManifests).toHaveLength(1);
+    const releaseManifest = releaseManifests[0];
+    if (!releaseManifest) throw new Error("The release manifest was not persisted.");
+    restartedRepository.database.prepare(`
+      UPDATE publication_release_manifests SET publisher_subject_id = ?
+      WHERE release_operation_id = ?
+    `).run("tampered-publisher", releaseManifest.releaseOperationId);
+    await expect(
+      restartedRepository.getPublicSnapshotBySlug("research-studio-http-integration"),
+    ).rejects.toMatchObject({ name: "RepositoryPersistenceError" });
+    restartedRepository.database.prepare(`
+      UPDATE publication_release_manifests SET publisher_subject_id = ?
+      WHERE release_operation_id = ?
+    `).run(releaseManifest.publisherSubjectId, releaseManifest.releaseOperationId);
+    expect(await restartedRepository.getPublicSnapshotBySlug("research-studio-http-integration"))
+      .toMatchObject({ id: created.publication.id, revision: { version: 6 } });
+    restartedRepository.close();
   });
 
   it("supports an authenticated Overwatch situation report without cross-application impersonation", async () => {
@@ -406,6 +469,78 @@ describe("Research Studio HTTP to Dispatch SQLite integration", () => {
       credential: { bearerToken: overwatchToken },
       fetch: routeFetch as typeof fetch,
     });
+
+    {
+      const signIn = await routeFetch("https://dispatch.integration.test/api/editorial/session", {
+        method: "POST",
+        headers: { authorization: `Bearer ${editorialToken}` },
+      });
+      expect(signIn.status).toBe(200);
+      const setCookie = signIn.headers.get("set-cookie") ?? "";
+      expect(setCookie).toContain("HttpOnly");
+      expect(setCookie).toContain("SameSite=Strict");
+      const sessionCookie = setCookie.split(";")[0];
+      if (!sessionCookie) throw new Error("Editorial sign-in did not issue a session cookie.");
+
+      const { createEditorialSession, editorialSessionCookie, EDITORIAL_SESSION_MAX_AGE_SECONDS } =
+        await import("@/security/editorial-session");
+      expect(editorialSessionCookie("test-session", true)).toContain("Secure");
+      const malformed = await routeFetch("https://dispatch.integration.test/api/editorial/session", {
+        headers: { cookie: "mayday-editorial-session=malformed" },
+      });
+      expect(malformed.status).toBe(401);
+      const expiredToken = createEditorialSession(
+        {
+          subjectId: "dispatch-editorial-service",
+          originatingApplication: "Dispatch Editorial",
+          roles: ["editor", "publisher"],
+        },
+        Date.now() - EDITORIAL_SESSION_MAX_AGE_SECONDS * 1000 - 1000,
+      );
+      const expired = await routeFetch("https://dispatch.integration.test/api/editorial/session", {
+        headers: { cookie: `mayday-editorial-session=${expiredToken}` },
+      });
+      expect(expired.status).toBe(401);
+
+      const originalCredentials = process.env.MAYDAY_APPLICATION_CREDENTIALS;
+      const credentials = JSON.parse(originalCredentials ?? "[]") as Array<{
+        applicationName: string;
+        tokenHash?: string;
+        roles?: string[];
+      }>;
+      const editorialCredential = credentials.find(
+        (credential) => credential.applicationName === "Dispatch Editorial",
+      );
+      if (!editorialCredential) throw new Error("Editorial integration credential is missing.");
+
+      try {
+        editorialCredential.roles = ["editor"];
+        process.env.MAYDAY_APPLICATION_CREDENTIALS = JSON.stringify(credentials);
+        const changedRoles = await routeFetch("https://dispatch.integration.test/api/editorial/session", {
+          headers: { cookie: sessionCookie },
+        });
+        expect(changedRoles.status).toBe(401);
+
+        editorialCredential.roles = ["editor", "publisher"];
+        editorialCredential.tokenHash = hash(`${editorialToken}-rotated`);
+        process.env.MAYDAY_APPLICATION_CREDENTIALS = JSON.stringify(credentials);
+
+        const oldSession = await routeFetch("https://dispatch.integration.test/api/editorial/session", {
+          headers: { cookie: sessionCookie },
+        });
+        expect(oldSession.status).toBe(401);
+
+        const logout = await routeFetch("https://dispatch.integration.test/api/editorial/session", {
+          method: "DELETE",
+          headers: { cookie: "mayday-editorial-session=invalid" },
+        });
+        expect(logout.status).toBe(200);
+        expect(logout.headers.get("set-cookie")).toContain("Max-Age=0");
+      } finally {
+        if (originalCredentials === undefined) delete process.env.MAYDAY_APPLICATION_CREDENTIALS;
+        else process.env.MAYDAY_APPLICATION_CREDENTIALS = originalCredentials;
+      }
+    }
     const editorialClient = new ResearchStudioDispatchClient({
       baseUrl: "https://dispatch.integration.test",
       applicationName: "Dispatch Editorial",
@@ -714,11 +849,12 @@ describe("Research Studio HTTP to Dispatch SQLite integration", () => {
       expectedVersion: briefForReview.originLink.version,
       revisionSummary: "Mark intelligence brief ready.",
     });
-    await editorialClient.requestLifecycle(createdBrief.publication.id, {
-      to: "published",
-      expectedVersion: briefReady.originLink.version,
-      revisionSummary: "Publish intelligence brief.",
-    });
+    const releasedBrief = await releaseWithEditorialSession(
+      createdBrief.publication.id,
+      briefReady.originLink.version,
+      "Publish intelligence brief.",
+    );
+    expect(releasedBrief.status).toBe(200);
 
     const { SqlitePublicationRepository } = await import("@/publications/repository");
     const repository = new SqlitePublicationRepository(databasePath, { migrate: false });
@@ -842,11 +978,12 @@ describe("Research Studio HTTP to Dispatch SQLite integration", () => {
       expectedVersion: review.originLink.version,
       revisionSummary: "Mark editorial preview control ready.",
     });
-    await editorialClient.requestLifecycle(created.publication.id, {
-      to: "published",
-      expectedVersion: ready.originLink.version,
-      revisionSummary: "Explicitly publish editorial preview control.",
-    });
+    const released = await releaseWithEditorialSession(
+      created.publication.id,
+      ready.originLink.version,
+      "Explicitly publish editorial preview control.",
+    );
+    expect(released.status).toBe(200);
     const publicResponse = await routeFetch(
       "https://dispatch.integration.test/api/public/publications/editorial-preview-control",
     );
@@ -949,6 +1086,7 @@ describe("Research Studio HTTP to Dispatch SQLite integration", () => {
       { headers: { cookie: editorialCookie!.split(";")[0] } },
     );
     expect(sessionQueue.status).toBe(200);
+    const editorialCookiePair = editorialCookie!.split(";")[0];
 
     const operatorSignIn = await routeFetch(
       "https://dispatch.integration.test/api/editorial/session",
@@ -1009,6 +1147,23 @@ describe("Research Studio HTTP to Dispatch SQLite integration", () => {
       revisionSummary: "Complete readiness checks.",
     });
 
+    const machineRelease = await routeFetch(
+      `https://dispatch.integration.test/api/publications/${created.publication.id}/transition`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${editorialToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          to: "published",
+          expectedVersion: ready.originLink.version,
+          revisionSummary: "M2M credentials cannot authorize a release.",
+        }),
+      },
+    );
+    expect(machineRelease.status).toBe(403);
+
     const crossOriginToggle = await routeFetch(
       "https://dispatch.integration.test/api/operations/publication-lockdown",
       {
@@ -1062,7 +1217,8 @@ describe("Research Studio HTTP to Dispatch SQLite integration", () => {
       {
         method: "POST",
         headers: {
-          authorization: `Bearer ${editorialToken}`,
+          cookie: editorialCookiePair,
+          origin: "https://dispatch.integration.test",
           "content-type": "application/json",
         },
         body: JSON.stringify({
@@ -1099,11 +1255,17 @@ describe("Research Studio HTTP to Dispatch SQLite integration", () => {
       publicationLockdown: { enabled: false, version: 2, changedBySubject: "dispatch-operator" },
     });
 
-    const release = await editorialClient.requestLifecycle(created.publication.id, {
-      to: "published",
-      expectedVersion: ready.originLink.version,
-      revisionSummary: "Explicitly release the approved revision.",
-    });
+    const releaseResponse = await releaseWithEditorialSession(
+      created.publication.id,
+      ready.originLink.version,
+      "Explicitly release the approved revision.",
+      editorialCookiePair,
+    );
+    expect(releaseResponse.status).toBe(200);
+    const release = await releaseResponse.json() as {
+      publication: { lifecycleState: string };
+      originLink: { version: number };
+    };
     expect(release.publication.lifecycleState).toBe("published");
     expect((await routeFetch(
       "https://dispatch.integration.test/api/public/publications/phase-eleven-lockdown-acceptance",
