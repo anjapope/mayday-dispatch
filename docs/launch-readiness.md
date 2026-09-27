@@ -4,6 +4,14 @@
 public site, publish production content, buy infrastructure, or enable
 autonomous publishing.
 
+The infrastructure assessment and proposed DPE-02 acceptance gates are in
+[production-establishment.md](./production-establishment.md). That plan is
+not evidence that a provider, domain, identity perimeter, backups, monitoring,
+or public deployment has been configured.
+The Golden Horn reports ownership of `thegoldenhorn.news` and
+`thegoldenhorn.org`; live DNS, hosting, TLS, identity, and public service
+configuration remain outstanding.
+
 ## Acceptance evidence and remaining decisions
 
 | Area | Phase Twelve evidence | Status before launch |
@@ -58,6 +66,6 @@ Do not launch until the actual deployment image and staging environment have
 passed the rehearsals in `production-runbook.md`, owners have signed off on
 security/legal/editorial decisions, the legacy content inventory is resolved,
 real content is reviewed, and all remaining findings have a named owner and
-accepted disposition. No public domain, production identity provider,
+accepted disposition. No live DNS or production identity provider,
 publication candidate, legal entity, contact address, contact email, or
 retention period is assumed here.
