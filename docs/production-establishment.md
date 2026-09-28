@@ -4,8 +4,9 @@
 `thegoldenhorn.news` and `thegoldenhorn.org`, registered through Spaceship
 effective 2026-09-27 for a combined initial one-year cost of US$14.81. No live
 DNS, hosting provider, identity service, or public deployment is configured.
-This plan authorizes no further purchase, DNS change, public deployment, or
-editorial release.**
+The DPE-02B1 hosting preparation refines this proposal using the retained
+DPE-02A rehearsal; it authorizes no purchase, DNS change, public deployment,
+external exposure, or editorial release.**
 
 ## 1. Executive recommendation
 
@@ -234,12 +235,12 @@ Research/analysis compute remains in separate upstream systems.
 | Resource | Initial planning allocation | Reason / growth trigger |
 | --- | --- | --- |
 | CPU | 2 shared vCPU minimum; 2–4 vCPU preferred | Next.js serves pages/APIs and Node's synchronous SQLite API. Raise only after observing sustained CPU saturation or latency. Do not perform application builds on the production host. |
-| RAM | 4 GiB recommended; 2 GiB is a constrained test floor | Allows OS, Docker, Node, SQLite page cache, and operational headroom. Observe peak resident memory and container OOM events before resizing. |
+| RAM | 4 GiB recommended; 2 GiB is a constrained test floor | Allows OS, Docker, Node, SQLite page cache, and operational headroom. Observe peak resident memory and container OOM events before resizing. DPE-02A measured about 70–82 MiB container memory in sampled synthetic local traffic; this is not a production load or sizing guarantee. |
 | OS/container | Supported 64-bit Linux server; Docker Engine and Compose plugin; Node 22 runtime in the image | Pin a supported OS/image line, install security updates, and rehearse upgrades. The official image currently uses Debian Bookworm slim / Node 22. |
 | Host system disk | 40–60 GiB SSD | OS, container layers, logs, image rollback, temporary migration/restore files. Rotate logs and alert before capacity pressure. |
 | Persistent application/database disk | Start with 20–50 GiB local SSD, dedicated mount, encrypted at rest where host supports it | SQLite database, WAL/SHM files, revisions, manifests, audit rows, and controlled future growth. Size from observed database growth; do not treat this as backup capacity. |
 | Off-host backup capacity | Size from measured DB size and selected backup generations; initially assess 50–100 GiB for a small installation | Full independent copies and restore workspace may require substantially more than the live DB. Recalculate from actual DB size, retention, and verified compression/versioning behavior. No raw evidence file repository exists in the current app. |
-| Network | Public ingress for HTTPS only; optional HTTP solely for ACME redirect/challenge; private/loopback app port | Permit only explicitly required outbound access for updates, backup, identity/perimeter, and operational dependencies. Upstream integrations call Dispatch inbound through separately restricted API routes. No database or Docker socket exposure. |
+| Network | After separate launch authorization, public ingress for HTTPS only; optional HTTP solely for ACME redirect/challenge; app port private/loopback | Permit only explicitly required outbound access for updates, backup, identity/perimeter, and operational dependencies. Upstream integrations call Dispatch inbound through separately restricted API routes. No database or Docker socket exposure. DPE-02A used loopback only; it did not validate a hosted network path. |
 | Data transfer | Measure actual page, asset, and API use; begin with provider-included transfer or a modest allowance | No research workloads or large evidence downloads should be served by Dispatch. Alert on unexpected egress and do not add third-party analytics by default. |
 
 Set operating-system/container storage alerts at approximately 70% (warning)
@@ -512,7 +513,8 @@ publication authority.
 These are planning envelopes in USD, not quotes, expenditures, or approved
 budgets. They exclude taxes, currency conversion, staff/on-call labor, legal
 work, and traffic/storage beyond assumptions. Verify current rates and terms
-for the selected region/plan before commitment.
+for the selected region/plan before commitment. DPE-02B1 makes no purchase
+and creates no billable service.
 
 | Cost | Preliminary monthly estimate | Annualized estimate | Essential/optional and assumptions |
 | --- | ---: | ---: | --- |
@@ -579,6 +581,44 @@ The service owner and relevant legal/security stakeholders must decide:
 
 Until these are resolved and verified, production is not configured and
 public launch remains unauthorized.
+
+## 17. DPE-02B1 hosting preparation
+
+DPE-02B1 is a design and purchasing-readiness stage only. The repository was
+at `11f8487b9defec5d5a48f15c306d3138de298bdd`, the stated DPE-02A baseline;
+the retained [DPE-02A rehearsal](./dpe-02a-staging-rehearsal.md) records
+successful container, database, migration, publication, health, restore, and
+bounded failure tests, with the limits and unresolved owner acceptance stated
+there. It did not test hosting, public networking, external MFA, live DNS,
+off-host backup, or public TLS. See
+[DPE-02B hosting preparation](./dpe-02b-hosting.md) for the refined
+specification, perimeter and recovery designs, purchase checklist, and
+acceptance gates.
+
+The selected proposal remains one modest Linux VPS and one Compose app
+process. DPE-02A's sampled container CPU of 0–0.82%, memory of about 70–82
+MiB, and 10.18-second local restart recovery are observations only; they do
+not establish a safe lower production size or hosted recovery objective.
+Retain the 2-vCPU/4-GiB starting allocation, measure after private hosted
+rehearsal, and do not scale SQLite across app instances.
+
+The editorial and operations surfaces must remain unexposed during this
+preparation. A future externally hosted private rehearsal requires a
+separately authorized, MFA-enforced private access path; it must not inherit
+the production credentials, data, or publishing authority. No DNS, firewall,
+proxy, identity, storage, backup, or deployment service was configured by
+DPE-02B1.
+
+The current application still emits
+`Strict-Transport-Security: max-age=63072000; includeSubDomains`. Before any
+DNS points at a serving endpoint, the owner must confirm that every affected
+subdomain is HTTPS-ready or approve a reviewed application/proxy policy
+change. Do not conceal or silently override this header at the proxy. HSTS
+preload remains out of scope.
+
+**DPE-02B1 preparation is complete as documentation only. It is not a
+provider selection, purchase authorization, DNS instruction, deployment
+approval, public exposure, or publication authorization.**
 
 ## 15. DPE-02 implementation sequence
 
