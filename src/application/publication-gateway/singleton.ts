@@ -1,10 +1,11 @@
 import { PublicationGatewayService } from "@/application/publication-gateway/service";
 import { getPublicationRepository } from "@/publications/repository";
 
-const gatewayService = new PublicationGatewayService({
-  repository: getPublicationRepository(),
-});
+let gatewayService: PublicationGatewayService | undefined;
 
 export function getPublicationGatewayService(): PublicationGatewayService {
+  gatewayService ??= new PublicationGatewayService({
+    repository: getPublicationRepository(),
+  });
   return gatewayService;
 }

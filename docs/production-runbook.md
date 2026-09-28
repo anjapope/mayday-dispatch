@@ -92,6 +92,12 @@ and production never seeds fixture records.
    ]
    ```
 
+Set `MAYDAY_EDITORIAL_ORIGIN` to the exact externally served HTTPS origin
+(normally the canonical `MAYDAY_PUBLIC_BASE_URL`). This explicit deployment
+value is used to validate same-origin browser mutations and avoids trusting
+proxy-supplied host headers. Local staging may use a loopback HTTP origin only
+when `MAYDAY_PUBLIC_INDEXING_DISABLED=true`; do not use HTTP for production.
+
    The placeholder is intentionally invalid. Issue independent high-entropy
    bearer tokens for each identity, store the plaintext only in the applicable
    password manager/upstream secret store, and configure only the SHA-256
@@ -194,11 +200,13 @@ and target-version compatibility. The launcher does not run or repair
 migrations: it refuses to start unless the database exists, is writable, and
 has the exact compatible schema.
 
-The health endpoint is `GET /api/health`. It returns only availability,
-database reachability, and installed/target schema versions; it does not return
-paths, hostnames, or credentials. It responds 503 when the database or
-migration state is not ready. An active publication lockdown is not an
-availability failure. Do not use this endpoint as editorial authorization.
+The health endpoint is `GET /api/health`. It returns only service availability,
+database read/write availability, and installed/target schema versions; it
+does not return paths, hostnames, or credentials. A rollback-only SQLite
+writer probe detects write-lock or write-access failures; the endpoint
+responds 503 when the database is unreadable, unwritable, or its migration
+state is not ready. An active publication lockdown is not an availability
+failure. Do not use this endpoint as editorial authorization.
 
 `npm start` uses the same production validation/lock launcher outside
 containers. It checks secrets, database location/permissions, migration

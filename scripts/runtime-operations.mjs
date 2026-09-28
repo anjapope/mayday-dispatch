@@ -209,6 +209,31 @@ export function validateProductionEnvironment() {
       throw new Error("MAYDAY_PUBLIC_BASE_URL must be an HTTPS origin without a path, query, or fragment.");
     }
   }
+  const editorialOrigin = process.env.MAYDAY_EDITORIAL_ORIGIN;
+  if (editorialOrigin) {
+    let parsed;
+    try {
+      parsed = new URL(editorialOrigin);
+    } catch {
+      throw new Error("MAYDAY_EDITORIAL_ORIGIN must be a valid HTTPS origin.");
+    }
+    const localHttpOrigin =
+      parsed.protocol === "http:" &&
+      ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname) &&
+      process.env.MAYDAY_PUBLIC_INDEXING_DISABLED === "true";
+    if (
+      (!localHttpOrigin && parsed.protocol !== "https:") ||
+      parsed.username ||
+      parsed.password ||
+      parsed.pathname !== "/" ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      throw new Error(
+        "MAYDAY_EDITORIAL_ORIGIN must be an HTTPS origin; HTTP is allowed only for loopback staging with indexing disabled.",
+      );
+    }
+  }
   return { databasePath, credentials };
 }
 

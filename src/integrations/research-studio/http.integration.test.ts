@@ -219,6 +219,7 @@ beforeAll(async () => {
     trustDevHeaders: process.env.MAYDAY_TRUST_DEV_HEADERS,
     sessionSecret: process.env.MAYDAY_SESSION_SECRET,
     publicBaseUrl: process.env.MAYDAY_PUBLIC_BASE_URL,
+    editorialOrigin: process.env.MAYDAY_EDITORIAL_ORIGIN,
   };
   process.env.MAYDAY_DATABASE_PATH = databasePath;
   process.env.MAYDAY_APPLICATION_CREDENTIALS = JSON.stringify([
@@ -255,6 +256,7 @@ beforeAll(async () => {
   ]);
   process.env.MAYDAY_SESSION_SECRET = sessionSecret;
   process.env.MAYDAY_PUBLIC_BASE_URL = "https://dispatch.integration.test";
+  process.env.MAYDAY_EDITORIAL_ORIGIN = integrationOrigin;
   delete process.env.MAYDAY_TRUST_DEV_HEADERS;
   restoreEnvironment = () => {
     if (previous.databasePath === undefined) delete process.env.MAYDAY_DATABASE_PATH;
@@ -267,6 +269,8 @@ beforeAll(async () => {
     else process.env.MAYDAY_SESSION_SECRET = previous.sessionSecret;
     if (previous.publicBaseUrl === undefined) delete process.env.MAYDAY_PUBLIC_BASE_URL;
     else process.env.MAYDAY_PUBLIC_BASE_URL = previous.publicBaseUrl;
+    if (previous.editorialOrigin === undefined) delete process.env.MAYDAY_EDITORIAL_ORIGIN;
+    else process.env.MAYDAY_EDITORIAL_ORIGIN = previous.editorialOrigin;
   };
 
   const publications = await import("../../../app/api/publications/route");
@@ -1087,6 +1091,21 @@ describe("Research Studio HTTP to Dispatch SQLite integration", () => {
     );
     expect(sessionQueue.status).toBe(200);
     const editorialCookiePair = editorialCookie!.split(";")[0];
+    const internalRuntimeRequest = new Request(
+      "http://0.0.0.0:3000/api/editorial/publications",
+      {
+        method: "POST",
+        headers: {
+          cookie: editorialCookiePair,
+          origin: integrationOrigin,
+        },
+      },
+    );
+    const { resolveEditorialSessionActor } = await import("@/security/editorial-session");
+    expect(resolveEditorialSessionActor(internalRuntimeRequest)).toMatchObject({
+      subjectId: "dispatch-editorial-service",
+      roles: ["editor", "publisher"],
+    });
 
     const operatorSignIn = await routeFetch(
       "https://dispatch.integration.test/api/editorial/session",

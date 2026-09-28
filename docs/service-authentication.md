@@ -44,7 +44,12 @@ credential for a signed, eight-hour, `HttpOnly`, `SameSite=Strict` cookie. The
 signing key is supplied through `MAYDAY_SESSION_SECRET_FILE` or the
 `MAYDAY_SESSION_SECRET` runtime setting and is never exposed to browser code.
 Sessions resolve current roles from the server configuration and reject
-cross-origin state-changing requests. This is not an OIDC/MFA provider; protect
-editorial routes with the organization's identity perimeter and rate limits.
+cross-origin state-changing requests against the explicit
+`MAYDAY_EDITORIAL_ORIGIN`, falling back to `MAYDAY_PUBLIC_BASE_URL` and then
+the request origin. Configure the public HTTPS origin for production; HTTP is
+permitted only for loopback staging when public indexing is disabled. The
+configured origin is trusted deployment configuration, not a forwarded host
+header. This is not an OIDC/MFA provider; protect editorial routes with the
+organization's identity perimeter and rate limits.
 See the [production runbook](./production-runbook.md) for provisioning,
 rotation, and deployment requirements.

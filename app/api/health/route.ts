@@ -10,6 +10,7 @@ export async function GET() {
   const repository = getPublicationRepository();
   const health = (await repository.checkHealth?.()) ?? {
     databaseReachable: false,
+    databaseWritable: false,
     migrations: {
       appliedCount: 0,
       availableCount: 0,
@@ -22,6 +23,7 @@ export async function GET() {
 
   const healthy =
     health.databaseReachable &&
+    health.databaseWritable &&
     health.migrations.compatible &&
     health.migrations.upToDate;
 
@@ -29,7 +31,10 @@ export async function GET() {
     {
       status: healthy ? "ok" : "degraded",
       service: { status: "ok" },
-      database: { reachable: health.databaseReachable },
+      database: {
+        reachable: health.databaseReachable,
+        writable: health.databaseWritable,
+      },
       migrations: {
         appliedCount: health.migrations.appliedCount,
         availableCount: health.migrations.availableCount,

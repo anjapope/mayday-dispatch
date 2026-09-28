@@ -1,5 +1,7 @@
 import type { MetadataRoute } from "next";
 
+export const dynamic = "force-dynamic";
+
 export default function robots(): MetadataRoute.Robots {
   const baseUrl = process.env.MAYDAY_PUBLIC_BASE_URL;
   const indexingDisabled = process.env.MAYDAY_PUBLIC_INDEXING_DISABLED === "true";

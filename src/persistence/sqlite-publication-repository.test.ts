@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import type { GatewayActor } from "@/application/publication-gateway/authorization";
 import { PublicationGatewayService } from "@/application/publication-gateway/service";
@@ -109,6 +110,36 @@ describe("SqlitePublicationRepository", () => {
       repository.database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get(),
     ).toMatchObject({ count: 8 });
     repository.close();
+  });
+
+  it("reports database write-lock loss and recovery in health checks", async () => {
+    const path = databasePath();
+    const repository = new SqlitePublicationRepository(path);
+    const competingWriter = new DatabaseSync(path);
+    let writeLockHeld = false;
+    try {
+      repository.database.exec("PRAGMA busy_timeout = 50");
+      competingWriter.exec("BEGIN IMMEDIATE");
+      writeLockHeld = true;
+
+      await expect(repository.checkHealth()).resolves.toMatchObject({
+        databaseReachable: true,
+        databaseWritable: false,
+        migrations: { compatible: true, upToDate: true },
+      });
+
+      competingWriter.exec("ROLLBACK");
+      writeLockHeld = false;
+      await expect(repository.checkHealth()).resolves.toMatchObject({
+        databaseReachable: true,
+        databaseWritable: true,
+        migrations: { compatible: true, upToDate: true },
+      });
+    } finally {
+      if (writeLockHeld) competingWriter.exec("ROLLBACK");
+      competingWriter.close();
+      repository.close();
+    }
   });
 
   it("fails closed for legacy published rows without an explicit release manifest", async () => {

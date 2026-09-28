@@ -151,7 +151,11 @@ export function resolveEditorialSessionActor(request: Request): GatewayActor | u
     const origin = request.headers.get("origin");
     let requestOrigin: string;
     try {
-      requestOrigin = new URL(request.url).origin;
+      const configuredOrigin =
+        process.env.MAYDAY_EDITORIAL_ORIGIN || process.env.MAYDAY_PUBLIC_BASE_URL;
+      requestOrigin = configuredOrigin
+        ? new URL(configuredOrigin).origin
+        : new URL(request.url).origin;
     } catch {
       throw new GatewayError("FORBIDDEN", "The editorial request origin could not be verified.");
     }

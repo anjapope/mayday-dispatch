@@ -153,6 +153,7 @@ export interface PublicationRepository {
 
 export type RepositoryHealth = {
   databaseReachable: boolean;
+  databaseWritable: boolean;
   migrations: MigrationStatus;
 };
 
@@ -369,6 +370,7 @@ export class InMemoryPublicationRepository implements PublicationRepository {
   async checkHealth(): Promise<RepositoryHealth> {
     return {
       databaseReachable: true,
+      databaseWritable: true,
       migrations: {
         appliedCount: 0,
         availableCount: 0,
@@ -439,11 +441,12 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
   }
 
   /**
-   * Reports database reachability and migration readiness only; never
-   * exposes the database file path or any other configuration detail.
+   * Reports database read/write readiness and migration state without
+   * exposing the database file path or other configuration details.
    */
   async checkHealth(): Promise<RepositoryHealth> {
     let databaseReachable = false;
+    let databaseWritable = false;
     try {
       this.database.prepare("SELECT 1").get();
       databaseReachable = true;
@@ -451,8 +454,26 @@ export class SqlitePublicationRepository implements PublicationRepository, Evide
       databaseReachable = false;
     }
 
+    if (databaseReachable) {
+      try {
+        this.database.exec("BEGIN IMMEDIATE");
+        try {
+          this.database.prepare(`
+            UPDATE schema_migrations SET checksum = checksum
+            WHERE name = (SELECT name FROM schema_migrations ORDER BY name DESC LIMIT 1)
+          `).run();
+          databaseWritable = true;
+        } finally {
+          this.database.exec("ROLLBACK");
+        }
+      } catch {
+        databaseWritable = false;
+      }
+    }
+
     return {
       databaseReachable,
+      databaseWritable,
       migrations: getMigrationStatus(this.database),
     };
   }

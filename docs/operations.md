@@ -1,9 +1,12 @@
 # Operations
 
 `GET /api/health` reports only readiness data: service availability, database
-reachability, and whether migrations are current. It returns HTTP 200 when
-ready and HTTP 503 when degraded. It intentionally excludes filesystem and
-database paths, connection strings, credentials, and machine names.
+read/write availability, and whether migrations are current. It performs a
+rollback-only SQLite writer probe; a blocked or unavailable writer returns
+HTTP 503 with the database marked reachable but not writable. It returns HTTP
+200 when ready and HTTP 503 when degraded. It intentionally excludes
+filesystem and database paths, connection strings, credentials, and machine
+names.
 
 Gateway route operations emit one JSON log entry on completion. Each entry
 contains timestamp, correlation ID, request ID, authenticated application
