@@ -62,7 +62,7 @@ export const GeographicRelationshipSchema = z.enum([
   "UNRESOLVED",
 ]);
 export const GeographicConfidenceSchema = z.enum(["unknown", "low", "medium", "high"]);
-export const PublicFeedEligibilitySchema = z.enum(["eligible", "ineligible", "pending"]);
+export const PublicFeedEligibilitySchema = z.enum(["eligible", "ineligible", "requires_review", "unknown"]);
 export const PublicEligibilityReasonSchema = z.enum([
   "source-not-public",
   "verification-pending",
@@ -186,7 +186,7 @@ export const NewsObservationSchema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["publicFeed", "reasons"], message: "Eligible observations cannot carry ineligibility reasons." });
   }
   if (observation.publicFeed.eligibility !== "eligible" && observation.publicFeed.reasons.length === 0) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["publicFeed", "reasons"], message: "Pending or ineligible observations require at least one reason." });
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["publicFeed", "reasons"], message: "Ineligible, review-required, or unknown observations require at least one reason." });
   }
 });
 

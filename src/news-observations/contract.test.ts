@@ -93,7 +93,7 @@ describe("news observation contract", () => {
       relatedObservationIds: ["tgh-observation-a", "tgh-observation-z"],
     });
     expect(first).toEqual(second);
-    expect(normalizeNewsObservation(newsObservationFixtures.pendingEligibility).publicFeed.eligibility).toBe("pending");
+    expect(normalizeNewsObservation(newsObservationFixtures.requiresReviewEligibility).publicFeed.eligibility).toBe("requires_review");
     expect(normalizeNewsObservation({
       ...newsObservationFixtures.validRss,
       provenance: { ...newsObservationFixtures.validRss.provenance, verificationState: "unknown" },

@@ -3,8 +3,11 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { PublicPublication } from "@/domain/publication";
+import type { PublicNewsObservation } from "@/news-observations/contract";
+import { buildGeographicNewsPoints } from "@/news-observations/query";
 import { geographicHotPoints } from "@/publications/geographic-context";
 import { publicSectionFor, type PublicSection } from "@/publications/public-section";
+import { NewsFeed } from "./news-feed";
 
 type Frame = { heading: string; body: string; href?: string };
 type PublicationLane = {
@@ -26,17 +29,19 @@ const publicationLanes: PublicationLane[] = [
   { id: "forecast", label: "Forecast", href: "/forecast" },
 ];
 
-export function DispatchMapExperience({ publications }: { publications: PublicPublication[] }) {
+export function DispatchMapExperience({ publications, newsObservations }: { publications: PublicPublication[]; newsObservations: PublicNewsObservation[] }) {
   const [frame, setFrame] = useState(0);
   const [activePoint, setActivePoint] = useState(0);
   const [paused, setPaused] = useState(false);
+  const newsPoints = buildGeographicNewsPoints(newsObservations);
+  const totalPoints = geographicHotPoints.length + newsPoints.length;
 
   useEffect(() => {
     if (paused) return;
     const frameTimer = window.setInterval(() => setFrame((value) => (value + 1) % frames.length), 10000);
-    const pointTimer = window.setInterval(() => setActivePoint((value) => (value + 1) % geographicHotPoints.length), 8000);
-    return () => { window.clearInterval(frameTimer); window.clearInterval(pointTimer); };
-  }, [paused]);
+    const pointTimer = totalPoints > 0 ? window.setInterval(() => setActivePoint((value) => (value + 1) % totalPoints), 8000) : undefined;
+    return () => { window.clearInterval(frameTimer); if (pointTimer) window.clearInterval(pointTimer); };
+  }, [paused, totalPoints]);
 
   const point = geographicHotPoints[activePoint];
   const pointPublications = point ? publications.filter((item) => point.publicationIds.includes(item.id)) : [];
@@ -61,7 +66,26 @@ export function DispatchMapExperience({ publications }: { publications: PublicPu
             <em>{index === activePoint && item.region}</em>
           </button>
         ))}
+        {newsPoints.map((item, index) => {
+          const activeIndex = geographicHotPoints.length + index;
+          const active = activeIndex === activePoint;
+          return (
+            <button className={`hot-point hot-point--observation ${active ? "hot-point--active" : ""}`} key={item.id} style={{ left: `${item.x}%`, top: `${item.y}%` }} onPointerEnter={() => { setPaused(true); setActivePoint(activeIndex); }} onFocus={() => { setPaused(true); setActivePoint(activeIndex); }} onClick={() => { setPaused(true); setActivePoint(activeIndex); }} aria-label={`${item.label}, ${item.observations.length} synthetic observations`}>
+              <span />
+              <strong>{active && item.label}</strong>
+              <em>{active && `${item.observations.length} synthetic headlines · ${item.publisherCount} publishers`}</em>
+            </button>
+          );
+        })}
       </div>
+      {activePoint >= geographicHotPoints.length && newsPoints[activePoint - geographicHotPoints.length] && (
+        <aside className="observation-context" aria-live="polite">
+          <p className="eyebrow">Synthetic location context</p>
+          <h2>{newsPoints[activePoint - geographicHotPoints.length].label}</h2>
+          <p>{newsPoints[activePoint - geographicHotPoints.length].observations.length} eligible observations · {newsPoints[activePoint - geographicHotPoints.length].topics.join(", ")}</p>
+          <ul>{newsPoints[activePoint - geographicHotPoints.length].observations.map((observation) => <li key={observation.observationId}>{observation.headline}</li>)}</ul>
+        </aside>
+      )}
       <section className="contextual-rail" aria-label="Current publication desks">
         {publicationLanes.map((lane) => {
           const lanePublications = publications.filter((item) => publicSectionFor(item) === lane.id);
@@ -94,6 +118,7 @@ export function DispatchMapExperience({ publications }: { publications: PublicPu
           );
         })}
       </section>
+      <NewsFeed observations={newsObservations} />
     </section>
   );
 }

@@ -156,9 +156,9 @@ export const newsObservationFixtures = {
       verificationState: "unverified",
     },
   },
-  pendingEligibility: {
+  requiresReviewEligibility: {
     ...baseObservation,
-    publicFeed: { eligibility: "pending", reasons: ["verification-pending"] },
+    publicFeed: { eligibility: "requires_review", reasons: ["verification-pending"] },
   },
   ineligible: {
     ...baseObservation,

@@ -24,6 +24,96 @@ body {
   margin: 0;
 }
 
+.news-feed,
+.observation-context {
+  background: color-mix(in srgb, var(--charcoal) 92%, transparent);
+  border: 1px solid color-mix(in srgb, var(--bone) 24%, transparent);
+  color: var(--bone);
+}
+
+.news-feed {
+  margin: 0 auto;
+  max-width: 1120px;
+  padding: 1.5rem;
+}
+
+.news-feed > header {
+  align-items: baseline;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.news-feed h2,
+.observation-context h2 {
+  margin: 0;
+}
+
+.news-feed__status,
+.news-feed__notice,
+.news-feed li p,
+.news-feed small,
+.observation-context p {
+  color: var(--stone);
+  font-size: 0.8rem;
+}
+
+.news-feed__filter {
+  color: var(--stone);
+  font-size: 0.78rem;
+}
+
+.news-feed__filter select {
+  margin-left: 0.4rem;
+}
+
+.news-feed__notice {
+  margin: 0.75rem 0 1rem;
+}
+
+.news-feed ol {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.news-feed li {
+  border-top: 1px solid color-mix(in srgb, var(--bone) 20%, transparent);
+  padding-top: 0.75rem;
+}
+
+.news-feed a {
+  color: var(--bone);
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 700;
+}
+
+.news-feed li p {
+  margin: 0.35rem 0;
+}
+
+.hot-point--observation span {
+  background: var(--olive);
+}
+
+.observation-context {
+  bottom: 15rem;
+  max-width: 340px;
+  padding: 1rem;
+  position: absolute;
+  right: max(1rem, calc((100% - 1080px) / 2));
+  z-index: 2;
+}
+
+.observation-context ul {
+  font-size: 0.85rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
 .public-header {
   background: var(--charcoal);
   color: var(--bone);
