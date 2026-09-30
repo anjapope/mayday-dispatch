@@ -15,7 +15,7 @@ export default async function HomePage() {
 
   return (
     <main className="shell public-home">
-      <DispatchMapExperience publications={publications} newsObservations={news.observations} />
+      <DispatchMapExperience publications={publications} newsObservations={news.observations} providerStatus={fixtureNewsObservationProvider.status} />
     </main>
   );
 }

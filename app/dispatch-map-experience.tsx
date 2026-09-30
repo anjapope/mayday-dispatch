@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { PublicPublication } from "@/domain/publication";
 import type { PublicNewsObservation } from "@/news-observations/contract";
+import type { ObservationProviderStatus } from "@/news-observations/provider";
 import { buildGeographicNewsPoints } from "@/news-observations/query";
 import { geographicHotPoints } from "@/publications/geographic-context";
 import { publicSectionFor, type PublicSection } from "@/publications/public-section";
@@ -29,7 +30,7 @@ const publicationLanes: PublicationLane[] = [
   { id: "forecast", label: "Forecast", href: "/forecast" },
 ];
 
-export function DispatchMapExperience({ publications, newsObservations }: { publications: PublicPublication[]; newsObservations: PublicNewsObservation[] }) {
+export function DispatchMapExperience({ publications, newsObservations, providerStatus }: { publications: PublicPublication[]; newsObservations: PublicNewsObservation[]; providerStatus: ObservationProviderStatus }) {
   const [frame, setFrame] = useState(0);
   const [activePoint, setActivePoint] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -70,17 +71,17 @@ export function DispatchMapExperience({ publications, newsObservations }: { publ
           const activeIndex = geographicHotPoints.length + index;
           const active = activeIndex === activePoint;
           return (
-            <button className={`hot-point hot-point--observation ${active ? "hot-point--active" : ""}`} key={item.id} style={{ left: `${item.x}%`, top: `${item.y}%` }} onPointerEnter={() => { setPaused(true); setActivePoint(activeIndex); }} onFocus={() => { setPaused(true); setActivePoint(activeIndex); }} onClick={() => { setPaused(true); setActivePoint(activeIndex); }} aria-label={`${item.label}, ${item.observations.length} synthetic observations`}>
+            <button className={`hot-point hot-point--observation ${active ? "hot-point--active" : ""}`} key={item.id} style={{ left: `${item.x}%`, top: `${item.y}%` }} onPointerEnter={() => { setPaused(true); setActivePoint(activeIndex); }} onFocus={() => { setPaused(true); setActivePoint(activeIndex); }} onClick={() => { setPaused(true); setActivePoint(activeIndex); }} aria-label={`${item.label}, ${item.observations.length} ${providerStatus.synthetic ? "synthetic " : ""}observations`}>
               <span />
               <strong>{active && item.label}</strong>
-              <em>{active && `${item.observations.length} synthetic headlines · ${item.publisherCount} publishers`}</em>
+              <em>{active && `${item.observations.length} ${providerStatus.synthetic ? "synthetic " : ""}headlines · ${item.publisherCount} publishers`}</em>
             </button>
           );
         })}
       </div>
       {activePoint >= geographicHotPoints.length && newsPoints[activePoint - geographicHotPoints.length] && (
         <aside className="observation-context" aria-live="polite">
-          <p className="eyebrow">Synthetic location context</p>
+          <p className="eyebrow">{providerStatus.synthetic ? "Synthetic" : "Observation"} location context</p>
           <h2>{newsPoints[activePoint - geographicHotPoints.length].label}</h2>
           <p>{newsPoints[activePoint - geographicHotPoints.length].observations.length} eligible observations · {newsPoints[activePoint - geographicHotPoints.length].topics.join(", ")}</p>
           <ul>{newsPoints[activePoint - geographicHotPoints.length].observations.map((observation) => <li key={observation.observationId}>{observation.headline}</li>)}</ul>
@@ -118,7 +119,7 @@ export function DispatchMapExperience({ publications, newsObservations }: { publ
           );
         })}
       </section>
-      <NewsFeed observations={newsObservations} />
+      <NewsFeed observations={newsObservations} providerStatus={providerStatus} />
     </section>
   );
 }

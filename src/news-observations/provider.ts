@@ -6,12 +6,21 @@ import {
   type PublicNewsObservation,
 } from "@/news-observations/contract";
 
+export type ObservationProviderMode = "fixture" | "live" | "degraded" | "unavailable";
+
 export type ObservationProviderCapabilities = {
   cursorPagination: boolean;
   temporalFiltering: boolean;
   topicFiltering: boolean;
   incrementalUpdates: boolean;
-  liveIntelligence: false;
+  liveIntelligence: boolean;
+};
+
+export type ObservationProviderStatus = {
+  mode: ObservationProviderMode;
+  provider: "fixture" | "live";
+  synthetic: boolean;
+  detail?: "authentication-failed" | "capability-incompatible" | "rate-limited" | "service-unavailable" | "timeout" | "invalid-response";
 };
 
 export type ObservationQuery = {
@@ -25,12 +34,14 @@ export type ObservationQuery = {
 export type ObservationPage = {
   observations: PublicNewsObservation[];
   nextCursor?: string;
-  provider: "fixture";
-  synthetic: true;
+  provider: "fixture" | "live";
+  synthetic: boolean;
+  mode: ObservationProviderMode;
 };
 
 export interface NewsObservationProvider {
   readonly capabilities: ObservationProviderCapabilities;
+  readonly status: ObservationProviderStatus;
   list(query?: ObservationQuery): Promise<ObservationPage>;
   get(observationId: string): Promise<PublicNewsObservation | undefined>;
 }
@@ -43,7 +54,20 @@ function compareNewest(left: NewsObservation, right: NewsObservation): number {
     left.identity.observationId.localeCompare(right.identity.observationId);
 }
 
-function parseCursor(cursor: string | undefined): number {
+export function validateObservationQuery(query: ObservationQuery, maximumLimit = MAX_LIMIT): Required<Pick<ObservationQuery, "limit">> & ObservationQuery {
+  const limit = query.limit ?? DEFAULT_LIMIT;
+  if (!Number.isInteger(limit) || limit < 1 || limit > maximumLimit) {
+    throw new Error(`The observation limit must be an integer from 1 to ${maximumLimit}.`);
+  }
+  const from = query.from ? Date.parse(query.from) : undefined;
+  const to = query.to ? Date.parse(query.to) : undefined;
+  if ((query.from && Number.isNaN(from)) || (query.to && Number.isNaN(to)) || (from !== undefined && to !== undefined && from > to)) {
+    throw new Error("Observation temporal filters must use an ordered pair of ISO timestamps.");
+  }
+  return { ...query, limit };
+}
+
+export function parseNumericCursor(cursor: string | undefined): number {
   if (!cursor) return 0;
   if (!/^\d+$/.test(cursor)) throw new Error("The observation cursor is invalid.");
   return Number(cursor);
@@ -58,6 +82,12 @@ export class FixtureNewsObservationProvider implements NewsObservationProvider {
     liveIntelligence: false,
   };
 
+  readonly status: ObservationProviderStatus = {
+    mode: "fixture",
+    provider: "fixture",
+    synthetic: true,
+  };
+
   private readonly observations: NewsObservation[];
 
   constructor(items: readonly unknown[]) {
@@ -65,29 +95,24 @@ export class FixtureNewsObservationProvider implements NewsObservationProvider {
   }
 
   async list(query: ObservationQuery = {}): Promise<ObservationPage> {
-    const limit = query.limit ?? DEFAULT_LIMIT;
-    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) {
-      throw new Error(`The observation limit must be an integer from 1 to ${MAX_LIMIT}.`);
-    }
-    const from = query.from ? Date.parse(query.from) : undefined;
-    const to = query.to ? Date.parse(query.to) : undefined;
-    if ((query.from && Number.isNaN(from)) || (query.to && Number.isNaN(to))) {
-      throw new Error("Observation temporal filters must use ISO timestamps.");
-    }
+    const validated = validateObservationQuery(query);
+    const from = validated.from ? Date.parse(validated.from) : undefined;
+    const to = validated.to ? Date.parse(validated.to) : undefined;
     const filtered = this.observations.filter((observation) =>
       observation.publicFeed.eligibility === "eligible" &&
-      (!query.topic || observation.topics.identifiers.includes(query.topic)) &&
+      (!validated.topic || observation.topics.identifiers.includes(validated.topic)) &&
       (from === undefined || Date.parse(observation.temporal.updatedAt) >= from) &&
       (to === undefined || Date.parse(observation.temporal.updatedAt) <= to),
     );
-    const offset = parseCursor(query.cursor);
-    const observations = filtered.slice(offset, offset + limit).map(toPublicNewsObservation);
+    const offset = parseNumericCursor(validated.cursor);
+    const observations = filtered.slice(offset, offset + validated.limit).map(toPublicNewsObservation);
     const nextOffset = offset + observations.length;
     return {
       observations,
       nextCursor: nextOffset < filtered.length ? String(nextOffset) : undefined,
       provider: "fixture",
       synthetic: true,
+      mode: "fixture",
     };
   }
 

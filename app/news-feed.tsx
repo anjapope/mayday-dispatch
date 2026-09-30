@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import type { PublicNewsObservation } from "@/news-observations/contract";
+import type { ObservationProviderStatus } from "@/news-observations/provider";
 
 function displayTime(observation: PublicNewsObservation): string {
   const value = observation.publishedAt ?? observation.observedAt;
   return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(value));
 }
 
-export function NewsFeed({ observations }: { observations: readonly PublicNewsObservation[] }) {
+export function NewsFeed({ observations, providerStatus }: { observations: readonly PublicNewsObservation[]; providerStatus: ObservationProviderStatus }) {
   const [refreshedAt, setRefreshedAt] = useState(() => new Date());
   const [topic, setTopic] = useState("");
   const topics = Array.from(new Set(observations.flatMap((observation) => observation.topicIds))).sort();
@@ -26,7 +27,7 @@ export function NewsFeed({ observations }: { observations: readonly PublicNewsOb
       <header>
         <div>
           <p className="eyebrow">Automated news</p>
-          <h2 id="news-feed-heading">Synthetic observation feed</h2>
+          <h2 id="news-feed-heading">{providerStatus.mode === "fixture" ? "Synthetic observation feed" : "Observation feed"}</h2>
         </div>
         <label className="news-feed__filter">Topic
           <select value={topic} onChange={(event) => setTopic(event.target.value)}>
@@ -34,9 +35,15 @@ export function NewsFeed({ observations }: { observations: readonly PublicNewsOb
             {topics.map((value) => <option key={value} value={value}>{value}</option>)}
           </select>
         </label>
-        <span className="news-feed__status" aria-live="polite">Fixture refresh checked {refreshedAt.toLocaleTimeString()}</span>
+        <span className="news-feed__status" aria-live="polite">{providerStatus.mode === "fixture" ? "Fixture" : providerStatus.mode} refresh checked {refreshedAt.toLocaleTimeString()}</span>
       </header>
-      <p className="news-feed__notice">Demonstration data only. This feed has no live Intelligence connection.</p>
+      <p className="news-feed__notice">
+        {providerStatus.synthetic
+          ? "Demonstration data only. This feed has no live Intelligence connection."
+          : providerStatus.mode === "live"
+            ? "Live Intelligence observations are available through the configured read-only provider."
+            : "Live Intelligence observations are currently unavailable; no synthetic fallback is being presented as live data."}
+      </p>
       {visibleObservations.length === 0 ? (
         <p className="news-feed__empty">No eligible news observations are available from the configured provider.</p>
       ) : (
