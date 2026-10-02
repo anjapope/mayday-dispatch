@@ -40,8 +40,10 @@ export function NewsFeed({ observations, providerStatus }: { observations: reado
       <p className="news-feed__notice">
         {providerStatus.synthetic
           ? "Demonstration data only. This feed has no live Intelligence connection."
-          : providerStatus.mode === "live"
-            ? "Live Intelligence observations are available through the configured read-only provider."
+          : providerStatus.mode === "synchronized-current"
+            ? "Eligible observations are shown from the current Dispatch-synchronized Intelligence cache."
+            : providerStatus.mode === "synchronized-stale"
+              ? "Eligible observations are retained from a stale Dispatch-synchronized Intelligence cache."
             : "Live Intelligence observations are currently unavailable; no synthetic fallback is being presented as live data."}
       </p>
       {visibleObservations.length === 0 ? (
@@ -53,7 +55,7 @@ export function NewsFeed({ observations, providerStatus }: { observations: reado
               <a href={observation.canonicalUrl} rel="noreferrer" target="_blank">
                 <span>{observation.headline}</span>
               </a>
-              <p>{observation.publisher} · {displayTime(observation)}{observation.freshness === "stale" ? " · Stale fixture" : ""}</p>
+              <p>{observation.publisher} · {displayTime(observation)}{observation.freshness === "stale" ? " · Stale observation" : ""}</p>
               {observation.topicIds.length > 0 && <small>{observation.topicIds.join(" · ")}</small>}
             </li>
           ))}

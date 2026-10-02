@@ -4,6 +4,7 @@ import {
   normalizeNewsObservation,
   normalizeNewsObservations,
   toPublicNewsObservation,
+  type NewsObservation,
   type PublicNewsObservation,
 } from "@/news-observations/contract";
 import {
@@ -30,7 +31,7 @@ const ConsumerCapabilitiesSchema = z.object({
     maximumPageSize: z.number().int().min(1).max(100),
   }).strict(),
   filters: z.object({
-    topic: z.literal(true),
+    topic: z.boolean(),
     temporal: z.literal(true),
   }).strict(),
   references: z.object({
@@ -48,7 +49,8 @@ export type IntelligenceConsumerCapabilities = z.infer<typeof ConsumerCapabiliti
 
 export type IntelligenceConsumerCredentials = {
   bearerToken: string;
-  expiresAt: string;
+  expiresAt?: string;
+  endpoint?: string;
 };
 
 export type IntelligenceServiceHealth = {
@@ -108,7 +110,7 @@ export class LiveIntelligenceObservationProvider implements NewsObservationProvi
   readonly capabilities: ObservationProviderCapabilities = {
     cursorPagination: true,
     temporalFiltering: true,
-    topicFiltering: true,
+    topicFiltering: false,
     incrementalUpdates: false,
     liveIntelligence: true,
   };
@@ -130,6 +132,9 @@ export class LiveIntelligenceObservationProvider implements NewsObservationProvi
 
   async list(query: ObservationQuery = {}): Promise<ObservationPage> {
     const capabilities = await this.negotiate();
+    if (query.topic && !capabilities.filters.topic) {
+      throw new LiveConsumerError("invalid-response", "The Intelligence provider does not support topic filtering.");
+    }
     const validated = validateObservationQuery(query, Math.min(this.maxPageSize, capabilities.pagination.maximumPageSize));
     return this.withRetries(async (credentials) => {
       const response = await this.options.transport.listObservations(validated, credentials);
@@ -164,10 +169,43 @@ export class LiveIntelligenceObservationProvider implements NewsObservationProvi
       if (!page.nextCursor) return pages;
       cursor = page.nextCursor;
     }
+
     if (pages.at(-1)?.nextCursor) {
       throw new LiveConsumerError("invalid-response", "The Intelligence retrieval exceeded the configured page limit.");
     }
     return pages;
+  }
+
+  /**
+   * Server-only synchronization access. It deliberately retains non-eligible
+   * observations so Dispatch can preserve the upstream decision without
+   * exposing it in the automated public feed.
+   */
+  async listForSynchronization(query: ObservationQuery = {}): Promise<{ observations: NewsObservation[]; nextCursor?: string }> {
+    const capabilities = await this.negotiate();
+    if (query.topic && !capabilities.filters.topic) {
+      throw new LiveConsumerError("invalid-response", "The Intelligence provider does not support topic filtering.");
+    }
+    const validated = validateObservationQuery(query, Math.min(this.maxPageSize, capabilities.pagination.maximumPageSize));
+    return this.withRetries(async (credentials) => {
+      const response = await this.options.transport.listObservations(validated, credentials);
+      if (!withinResponseLimit(response, capabilities.limits.maximumResponseBytes)) {
+        throw new LiveConsumerError("invalid-response", "The Intelligence observation page exceeded its configured limit.");
+      }
+      const parsed = z.object({
+        observations: z.array(z.unknown()).max(validated.limit),
+        nextCursor: z.string().min(1).max(500).regex(/^[A-Za-z0-9._:-]+$/).optional(),
+      }).strict().safeParse(response);
+      if (!parsed.success) throw new LiveConsumerError("invalid-response", "The Intelligence observation page was invalid or oversized.");
+      try {
+        const observations = normalizeNewsObservations(parsed.data.observations);
+        this.status = { mode: "live", provider: "live", synthetic: false };
+        return { observations, nextCursor: parsed.data.nextCursor };
+      } catch {
+        this.audit("malformed-observation-rejected");
+        throw new LiveConsumerError("invalid-response", "The Intelligence observation page contained an invalid observation.");
+      }
+    });
   }
 
   async get(observationId: string): Promise<PublicNewsObservation | undefined> {
@@ -236,7 +274,11 @@ export class LiveIntelligenceObservationProvider implements NewsObservationProvi
 
   private async withRetries<T>(action: (credentials: IntelligenceConsumerCredentials) => Promise<T>): Promise<T> {
     const credentials = this.options.credentials();
-    if (!credentials?.bearerToken || Number.isNaN(Date.parse(credentials.expiresAt)) || Date.parse(credentials.expiresAt) <= Date.now()) {
+    if (
+      !credentials?.bearerToken ||
+      (credentials.expiresAt !== undefined &&
+        (Number.isNaN(Date.parse(credentials.expiresAt)) || Date.parse(credentials.expiresAt) <= Date.now()))
+    ) {
       this.status = statusFor("authentication-failed");
       this.audit("authentication-rejected");
       throw new LiveConsumerError("authentication-failed", "Live Intelligence credentials are missing or expired.");

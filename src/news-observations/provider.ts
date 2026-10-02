@@ -6,7 +6,7 @@ import {
   type PublicNewsObservation,
 } from "@/news-observations/contract";
 
-export type ObservationProviderMode = "fixture" | "live" | "degraded" | "unavailable";
+export type ObservationProviderMode = "fixture" | "live" | "synchronized-current" | "synchronized-stale" | "degraded" | "unavailable";
 
 export type ObservationProviderCapabilities = {
   cursorPagination: boolean;
