@@ -24,23 +24,28 @@ describe.runIf(enabled)("controlled real Intelligence provider rehearsal", () =>
     const replay = await synchronizer.backfill(bounds);
     const incremental = await synchronizer.incrementallySynchronize(bounds);
     const documents = database.prepare(`
-      SELECT document_id FROM intelligence_observations
+      SELECT document_id, eligibility FROM intelligence_observations
       WHERE provider_id = 'mayday-intelligence-int-del-001c'
       ORDER BY document_id LIMIT 2
-    `).all() as Array<{ document_id: string }>;
+    `).all() as Array<{ document_id: string; eligibility: "eligible" | "ineligible" | "requires_review" }>;
     expect(documents).toHaveLength(2);
-    const eligibleReview = cache.reviewEligibility(
-      documents[0].document_id,
-      "eligible",
-      { subjectId: "dispatch-rehearsal-operator", application: "Dispatch Operations" },
-      "Controlled TGH-INT-003D rehearsal.",
-    );
-    const ineligibleReview = cache.reviewEligibility(
-      documents[1].document_id,
-      "ineligible",
-      { subjectId: "dispatch-rehearsal-operator", application: "Dispatch Operations" },
-      "Controlled TGH-INT-003D rehearsal.",
-    );
+    const requiresReview = documents.every((document) => document.eligibility === "requires_review");
+    const eligibleReview = requiresReview
+      ? cache.reviewEligibility(
+        documents[0].document_id,
+        "eligible",
+        { subjectId: "dispatch-rehearsal-operator", application: "Dispatch Operations" },
+        "Controlled TGH-INT-003D rehearsal.",
+      )
+      : undefined;
+    const ineligibleReview = requiresReview
+      ? cache.reviewEligibility(
+        documents[1].document_id,
+        "ineligible",
+        { subjectId: "dispatch-rehearsal-operator", application: "Dispatch Operations" },
+        "Controlled TGH-INT-003D rehearsal.",
+      )
+      : undefined;
     const reviewedReplay = await synchronizer.backfill(bounds);
     const after = Number((database.prepare("SELECT COUNT(*) AS count FROM intelligence_observations").get() as { count: number }).count);
     console.info(JSON.stringify({
@@ -51,7 +56,9 @@ describe.runIf(enabled)("controlled real Intelligence provider rehearsal", () =>
       backfill,
       replay: { accepted: replay.accepted, duplicates: replay.duplicates },
       incremental,
-      review: { eligible: eligibleReview.documentId, ineligible: ineligibleReview.documentId },
+      review: eligibleReview && ineligibleReview
+        ? { eligible: eligibleReview.documentId, ineligible: ineligibleReview.documentId }
+        : "preserved-existing-decisions",
       reviewedReplay: { duplicates: reviewedReplay.duplicates },
       backfillCheckpoint: cache.checkpoint("backfill"),
       incrementalCheckpoint: cache.checkpoint("incremental"),
