@@ -34,6 +34,16 @@ export type SynchronizationResult = {
 
 const PROVIDER_ID = "mayday-intelligence-int-del-001c";
 const OPERATION_TYPES = new Set(["backfill", "incremental"]);
+export type ReviewEligibility = "eligible" | "ineligible" | "requires_review" | "unknown";
+
+export type SynchronizedObservationReview = {
+  documentId: string;
+  priorEligibility: ReviewEligibility;
+  eligibility: Extract<ReviewEligibility, "eligible" | "ineligible">;
+  operator: { subjectId: string; application?: string };
+  note?: string;
+  decidedAt: string;
+};
 
 function now(): string {
   return new Date().toISOString();
@@ -84,6 +94,49 @@ export class IntelligenceObservationCache {
     return row?.continuation_cursor ?? undefined;
   }
 
+  reviewEligibility(
+    documentId: string,
+    eligibility: Extract<ReviewEligibility, "eligible" | "ineligible">,
+    operator: { subjectId: string; application?: string },
+    note?: string,
+  ): SynchronizedObservationReview {
+    if (!documentId || !operator.subjectId || (note !== undefined && (!note.trim() || note.length > 500))) {
+      throw new Error("The synchronized observation review is invalid.");
+    }
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const current = this.database.prepare(`
+        SELECT eligibility, observation_json FROM intelligence_observations
+        WHERE provider_id = ? AND document_id = ?
+      `).get(PROVIDER_ID, documentId) as { eligibility: ReviewEligibility; observation_json: string } | undefined;
+      if (!current) throw new Error("The synchronized observation does not exist.");
+      if (current.eligibility !== "requires_review") {
+        throw new Error("Only requires_review observations can receive an eligibility decision.");
+      }
+      const observation = normalizeNewsObservation(JSON.parse(current.observation_json));
+      const reviewed = normalizeNewsObservation({
+        ...observation,
+        publicFeed: { eligibility, reasons: eligibility === "eligible" ? [] : ["safety-review"] },
+      });
+      const decidedAt = now();
+      this.database.prepare(`
+        UPDATE intelligence_observations SET eligibility = ?, observation_json = ?, synchronized_at = ?
+        WHERE provider_id = ? AND document_id = ?
+      `).run(eligibility, JSON.stringify(reviewed), decidedAt, PROVIDER_ID, documentId);
+      this.database.prepare(`
+        INSERT INTO intelligence_observation_review_audit_events (
+          provider_id, document_id, prior_eligibility, new_eligibility, operator_subject_id,
+          operator_application, note, decided_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(PROVIDER_ID, documentId, current.eligibility, eligibility, operator.subjectId, operator.application ?? null, note?.trim() ?? null, decidedAt);
+      this.database.exec("COMMIT");
+      return { documentId, priorEligibility: current.eligibility, eligibility, operator, note: note?.trim(), decidedAt };
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   applyPage(operationType: "backfill" | "incremental", observations: readonly NewsObservation[], cursor: string | undefined): Pick<SynchronizationResult, "accepted" | "duplicates" | "revisionUpdates" | "rejected"> {
     const receivedAt = now();
     let duplicates = 0;
@@ -94,8 +147,8 @@ export class IntelligenceObservationCache {
         const documentId = observation.identity.intelligenceDocumentId;
         const digest = fingerprint(observation);
         const existing = this.database.prepare(`
-          SELECT content_fingerprint FROM intelligence_observations WHERE provider_id = ? AND document_id = ?
-        `).get(PROVIDER_ID, documentId) as { content_fingerprint: string } | undefined;
+          SELECT content_fingerprint, eligibility FROM intelligence_observations WHERE provider_id = ? AND document_id = ?
+        `).get(PROVIDER_ID, documentId) as { content_fingerprint: string; eligibility: ReviewEligibility } | undefined;
         if (!existing) {
           this.database.prepare(`
             INSERT INTO intelligence_observations (
@@ -109,7 +162,13 @@ export class IntelligenceObservationCache {
             UPDATE intelligence_observations
             SET content_fingerprint = ?, observation_json = ?, eligibility = ?, synchronized_at = ?
             WHERE provider_id = ? AND document_id = ?
-          `).run(digest, JSON.stringify(observation), observation.publicFeed.eligibility, receivedAt, PROVIDER_ID, documentId);
+          `).run(digest, JSON.stringify({
+            ...observation,
+            publicFeed: {
+              eligibility: existing.eligibility,
+              reasons: existing.eligibility === "eligible" ? [] : ["safety-review"],
+            },
+          }), existing.eligibility, receivedAt, PROVIDER_ID, documentId);
         } else duplicates += 1;
       }
       this.database.prepare(`
