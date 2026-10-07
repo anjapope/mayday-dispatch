@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { actorFromRequest } from "@/application/publication-gateway/http";
 import { getPublicationRepository } from "@/publications/repository";
 import { PublicationLockdownControl } from "./publication-lockdown-control";
+import { IntelligenceSyncControl } from "./intelligence-sync-control";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -26,12 +27,15 @@ export default async function OperationsPage() {
   if (!control) {
     throw new Error("Operational controls are unavailable.");
   }
+  const database = getPublicationRepository() as { database?: { prepare(sql: string): { get(): Record<string, unknown> | undefined } } };
+  const syncState = database.database?.prepare("SELECT * FROM intelligence_sync_worker_state WHERE worker_name = 'intelligence-sync'").get();
   return (
     <main className="shell detail">
       <p className="eyebrow">Dispatch / Operations</p>
       <h1>Publication lockdown</h1>
       <p>Lockdown blocks new public releases and updates without removing material already published.</p>
       <PublicationLockdownControl initiallyEnabled={control.enabled} />
+      {syncState && <IntelligenceSyncControl initial={syncState} />}
     </main>
   );
 }

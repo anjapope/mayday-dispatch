@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:integration": "vitest run src/integrations/research-studio/http.integration.test.ts",
     "test:migrations": "vitest run src/persistence/sqlite-publication-repository.test.ts",
+    "intelligence:worker": "tsx scripts/intelligence-worker.ts",
     "db:migrate": "node scripts/migrate.mjs",
     "db:status": "node scripts/db-status.mjs",
     "db:backup": "node scripts/db-backup.mjs",
@@ -30,6 +31,7 @@
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "^5.0.2",
     "eslint": "^9.33.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.39.0",
     "vitest": "^4.1.11"

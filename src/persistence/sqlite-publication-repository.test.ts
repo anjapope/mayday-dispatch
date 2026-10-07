@@ -108,7 +108,7 @@ describe("SqlitePublicationRepository", () => {
     );
     expect(
       repository.database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get(),
-    ).toMatchObject({ count: 10 });
+    ).toMatchObject({ count: 11 });
     repository.close();
   });
 
